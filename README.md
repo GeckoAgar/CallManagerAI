@@ -114,6 +114,85 @@ npm --prefix backend run create-admin
 
 El comando solicita la contraseña sin mostrarla y no modifica una cuenta existente. El registro público siempre asigna el rol `USER`.
 
+## Llevar el proyecto a otra PC
+
+Estos pasos permiten instalar CallManagerAI en una computadora nueva y, opcionalmente, trasladar también los usuarios y demás datos de MySQL. No hace falta copiar `node_modules`; se instalarán de nuevo en el equipo destino.
+
+### 1. Preparar la PC actual
+
+1. Deja de usar la aplicación y detén el backend para evitar cambios en la base durante la exportación.
+2. Abre MySQL Workbench y conéctate al servidor donde está la base `callmanagerai`.
+3. Para trasladar los datos existentes, ve a **Server > Data Export**:
+   - Selecciona el esquema `callmanagerai` y todas sus tablas.
+   - Elige **Export to Self-Contained File** y guarda el archivo, por ejemplo, como `callmanagerai-backup.sql` en una ubicación segura.
+   - Incluye estructura y datos y, si aparece la opción, **Include Create Schema**.
+   - Pulsa **Start Export** y verifica que Workbench termine sin errores.
+4. Copia el archivo de respaldo a la PC nueva mediante un medio privado y seguro. El respaldo puede contener datos personales; no lo publiques en GitHub ni lo compartas públicamente.
+
+Si no necesitas conservar usuarios, llamadas u otros datos, puedes omitir la exportación y crear una base vacía en la PC nueva usando `backend/database/schema.sql`. Los datos de ejemplo de `backend/database/seeds.sql` son opcionales.
+
+### 2. Instalar el proyecto en la PC nueva
+
+1. Instala Node.js (versión LTS), MySQL Server, MySQL Workbench y Git. Para usar llamadas con Twilio en desarrollo, instala también ngrok.
+2. Abre PowerShell en la carpeta donde quieras guardar el proyecto y clona el repositorio:
+
+   ```powershell
+   git clone https://github.com/GeckoAgar/CallManagerAI.git
+   Set-Location CallManagerAI
+   ```
+
+3. Instala las dependencias desde la raíz del proyecto:
+
+   ```powershell
+   npm install
+   npm --prefix backend install
+   npm --prefix frontend install
+   ```
+
+4. Inicia MySQL Server y crea una conexión local en Workbench.
+5. Si vas a restaurar la base, en Workbench selecciona **Server > Data Import**, elige **Import from Self-Contained File**, busca `callmanagerai-backup.sql` y pulsa **Start Import**. Si el respaldo no incluye la creación del esquema, crea primero `callmanagerai` en Workbench y selecciónalo como esquema de destino.
+6. Si vas a empezar con una base vacía, abre y ejecuta `backend/database/schema.sql` en Workbench. No ejecutes `seeds.sql` salvo que quieras los contactos de ejemplo.
+
+Al restaurar un respaldo completo no vuelvas a ejecutar `schema.sql`, los seeds ni las migraciones: el respaldo ya incluye el estado de la base exportada. Conserva el archivo de respaldo hasta comprobar que la aplicación funciona en la nueva PC.
+
+### 3. Configurar el entorno de la PC nueva
+
+1. Desde la raíz del proyecto, crea el archivo local `.env`:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Edita `.env` y configura las credenciales de MySQL de la PC nueva (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`). El nombre de la base debe coincidir con la restaurada o creada.
+3. Genera un `JWT_SECRET` nuevo con el comando indicado en **Variables de entorno**.
+4. `.env` no se guarda en GitHub. Configúralo en la nueva PC; no publiques el archivo ni pegues sus secretos en chats o repositorios.
+5. Para usar Twilio, configura en `.env` las credenciales de tu cuenta y el número habilitado para voz. Puedes reutilizar la misma cuenta si tienes acceso, pero conserva las credenciales de forma privada. Para una instalación sin llamadas, puedes dejar Twilio sin configurar.
+
+### 4. Configurar ngrok y Twilio (opcional)
+
+1. Inicia la aplicación desde la raíz del proyecto con `npm run dev` y deja esa terminal abierta.
+2. Inicia sesión en ngrok en esa PC y configura tu authtoken siguiendo las instrucciones de tu cuenta. En otra terminal, ejecuta:
+
+   ```powershell
+   ngrok http 4000
+   ```
+
+3. Copia el nuevo dominio HTTPS de ngrok en `TWILIO_WEBHOOK_BASE_URL` (sin ruta y sin barra final). Reinicia el backend después de cambiar `.env`.
+4. En Twilio Console, actualiza la Voice URL de la TwiML App y del número para usar el dominio nuevo:
+   `https://<dominio-ngrok>/api/softphone/webhooks/voice`
+   con método **HTTP POST**.
+5. Mantén ngrok activo mientras uses llamadas. En el plan gratuito, el dominio puede cambiar al reiniciar el túnel; si cambia, actualiza `.env` y las URLs en Twilio.
+
+### 5. Comprobar la instalación
+
+Si no configuraste Twilio en el paso anterior, inicia la aplicación desde la raíz con `npm run dev`. Abre la dirección **Local** que indique Vite en la terminal. La API debe iniciar sin errores de conexión a MySQL. Prueba iniciar sesión con un usuario existente si restauraste la base. Si creaste una base vacía, crea el administrador inicial una sola vez:
+
+```powershell
+npm --prefix backend run create-admin
+```
+
+Comprueba también que puedes iniciar sesión y que las páginas cargan. Para llamadas, verifica que el softphone se conecte, concede permiso de micrófono y realiza una prueba controlada. Si algo falla, revisa los mensajes de las terminales, el estado de MySQL y las variables de `.env`.
+
 ## API y permisos
 
 ### Autenticación
