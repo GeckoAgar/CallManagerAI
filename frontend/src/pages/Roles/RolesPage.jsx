@@ -2,8 +2,8 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'name', label: 'Nombre' },
-  { key: 'description', label: 'Descripción' },
+  { key: 'name', label: 'Rol', type: 'role' },
+  { key: 'description', label: 'Descripción', type: 'truncate' },
 ];
 
 const fields = [

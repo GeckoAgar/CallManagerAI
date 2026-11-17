@@ -2,11 +2,11 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'file_name', label: 'Archivo' },
-  { key: 'phone_number', label: 'Número de llamada' },
-  { key: 'duration_seconds', label: 'Duración (s)' },
-  { key: 'url', label: 'URL' },
-  { key: 'transcription', label: 'Transcripción' },
+  { key: 'file_name', label: 'Archivo', type: 'primary' },
+  { key: 'phone_number', label: 'Número de llamada', type: 'monospace' },
+  { key: 'duration_seconds', label: 'Duración (s)', type: 'number' },
+  { key: 'url', label: 'URL', type: 'truncate' },
+  { key: 'transcription', label: 'Transcripción', type: 'truncate' },
 ];
 
 const fields = [

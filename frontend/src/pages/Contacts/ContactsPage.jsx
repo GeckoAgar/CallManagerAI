@@ -3,11 +3,11 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'name', label: 'Nombre' },
-  { key: 'company', label: 'Empresa' },
-  { key: 'phone', label: 'Teléfono' },
-  { key: 'email', label: 'Correo' },
-  { key: 'owner_name', label: 'Propietario' },
+  { key: 'name', label: 'Nombre', type: 'primary' },
+  { key: 'company', label: 'Empresa', type: 'truncate' },
+  { key: 'phone', label: 'Teléfono', type: 'monospace' },
+  { key: 'email', label: 'Correo', type: 'truncate' },
+  { key: 'owner_name', label: 'Propietario', type: 'truncate' },
   { key: 'status', label: 'Estado', type: 'status' },
 ];
 
