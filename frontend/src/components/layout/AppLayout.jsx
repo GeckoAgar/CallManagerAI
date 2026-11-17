@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Bell, BriefcaseBusiness, FileText, Headphones, LayoutDashboard, LogOut, Phone, PhoneCall, Search, Settings, ShieldCheck, Users, Volume2 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
+import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 
 const navigation = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -20,11 +21,20 @@ const navigation = [
 export function AppLayout({ children }) {
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
+  const textSize = useUiPreferencesStore((state) => state.textSize);
   const [logoutError, setLogoutError] = useState('');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const visibleNavigation = user?.roleName === 'ADMIN'
     ? navigation
     : navigation.filter((item) => item.to !== '/roles' && item.to !== '/supervision');
+
+  useEffect(() => {
+    const previousFontSize = document.documentElement.style.fontSize;
+    document.documentElement.style.fontSize = textSize === 'large' ? '18px' : '16px';
+    return () => {
+      document.documentElement.style.fontSize = previousFontSize;
+    };
+  }, [textSize]);
 
   async function handleLogout() {
     if (isLoggingOut) return;
