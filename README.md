@@ -213,7 +213,7 @@ Si el respaldo corresponde al esquema actual de CallManagerAI, no vuelvas a ejec
 
 ### 5. Comprobar la instalación
 
-Si no configuraste Twilio en el paso anterior, inicia la aplicación desde la raíz con `npm run dev`. Abre la dirección **Local** que indique Vite en la terminal. La API debe iniciar sin errores de conexión a MySQL. Prueba iniciar sesión con un usuario existente si restauraste la base. Si creaste una base vacía, crea el administrador inicial una sola vez:
+Si no configuraste Twilio en el paso anterior, inicia la aplicación desde la raíz con `npm run dev`. Abre la dirección **Local** que indique Vite en la terminal. La API debe iniciar sin errores de conexión a MySQL. Prueba iniciar sesión con un usuario existente si restauraste la base. Si creaste una base vacía, crea el admigitnistrador inicial una sola vez:
 
 ```powershell
 npm --prefix backend run create-admin

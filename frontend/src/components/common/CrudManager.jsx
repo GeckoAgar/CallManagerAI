@@ -186,7 +186,7 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
 
       {dialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="crud-dialog-title">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-soft" role="dialog" aria-modal="true" aria-labelledby="crud-dialog-title">
             <div className="mb-5 flex items-center justify-between">
               <h4 id="crud-dialog-title" className="text-lg font-semibold text-white">{editing ? 'Editar' : 'Crear'}: {title}</h4>
               <button type="button" onClick={() => setDialogOpen(false)} aria-label="Cerrar" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
