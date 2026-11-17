@@ -79,11 +79,11 @@ export default function App() {
         <Route path="/calls" element={<CallsPage />} />
         <Route path="/softphone" element={<SoftphonePage />} />
         <Route path="/recordings" element={<RecordingsPage />} />
-        <Route path="/supervision" element={<SupervisionPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route element={<AdminRoute />}>
           <Route path="/roles" element={<RolesPage />} />
+          <Route path="/supervision" element={<SupervisionPage />} />
         </Route>
       </Route>
     </Routes>

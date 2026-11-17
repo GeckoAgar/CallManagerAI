@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 
 const authRoutes = require('./routes/authRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const userRoutes = require('./routes/userRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const callRoutes = require('./routes/callRoutes');
@@ -28,6 +29,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/calls', callRoutes);

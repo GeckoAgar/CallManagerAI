@@ -6,8 +6,12 @@
     failed: 'Fallida',
     blocked: 'Bloqueado',
     inactive: 'Inactivo',
+    available: 'Disponible',
+    busy: 'Ocupado',
+    offline: 'Desconectado',
     monitoring: 'Monitoreo',
     waiting: 'Espera',
+    escalated: 'Escalada',
   };
 
   const colorMap = {
@@ -17,8 +21,12 @@
     failed: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
     blocked: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
     inactive: 'border-slate-500 bg-slate-800 text-slate-200',
+    available: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+    busy: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
+    offline: 'border-slate-500 bg-slate-800 text-slate-200',
     monitoring: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200',
     waiting: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
+    escalated: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
   };
 
   return (

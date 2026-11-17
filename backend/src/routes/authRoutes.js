@@ -3,6 +3,8 @@ const router = express.Router();
 const { registerValidation, loginValidation, validateRequest } = require('../validators/authValidators');
 const { registerUser, loginUser, generateToken } = require('../utils/authService');
 const { authenticate } = require('../middlewares/auth');
+const { pool } = require('../config/db');
+const { runInTransaction } = require('../utils/surveillanceQueue');
 
 router.post('/register', registerValidation, validateRequest, async (req, res) => {
   try {
@@ -40,8 +42,24 @@ router.get('/me', authenticate, async (req, res) => {
   return res.json({ user: req.user });
 });
 
-router.post('/logout', authenticate, async (req, res) => {
-  return res.json({ message: 'Sesión cerrada correctamente.' });
+router.post('/logout', authenticate, async (req, res, next) => {
+  try {
+    await runInTransaction(async (connection) => {
+      await connection.query(
+        'UPDATE users SET token_version = token_version + 1 WHERE id = ?',
+        [req.user.id]
+      );
+      await connection.query(
+        `UPDATE agent_presence
+         SET status = 'offline', device_session_id = NULL
+         WHERE user_id = ?`,
+        [req.user.id]
+      );
+    });
+    return res.json({ message: 'Sesión cerrada correctamente.' });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 module.exports = router;

@@ -1,41 +1,96 @@
-﻿import { StatusBadge } from '../../components/common/StatusBadge';
+import { useEffect, useState } from 'react';
+import api from '../../services/api';
 
-const metrics = [
-  { title: 'Llamadas totales', value: '1.284', delta: '+12.4%', tone: 'blue' },
-  { title: 'Tasa de resolución', value: '94.8%', delta: '+4.2%', tone: 'green' },
-  { title: 'Tiempo promedio', value: '03:42', delta: '-0:16', tone: 'amber' },
-  { title: 'Alertas', value: '12', delta: '+2', tone: 'red' },
-];
-
-const chartData = [
-  { day: 'Lun', calls: 120, answered: 102 },
-  { day: 'Mar', calls: 140, answered: 125 },
-  { day: 'Mié', calls: 176, answered: 160 },
-  { day: 'Jue', calls: 132, answered: 116 },
-  { day: 'Vie', calls: 200, answered: 182 },
-  { day: 'Sáb', calls: 110, answered: 90 },
-];
-
-function StatCard({ title, value, delta, tone = 'blue' }) {
-  const toneClasses = {
-    blue: 'border-brand-500/20 bg-brand-500/10 text-brand-200',
-    green: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
-    red: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
-    amber: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
-  };
-
+function StatCard({ title, value }) {
   return (
     <div className="card p-5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-400">{title}</span>
-        <div className={`rounded-lg border px-2 py-1 text-xs ${toneClasses[tone]}`}>{delta}</div>
-      </div>
+      <span className="text-sm text-slate-400">{title}</span>
       <div className="mt-5 text-3xl font-bold text-white">{value}</div>
     </div>
   );
 }
 
+function formatDuration(seconds) {
+  const numericSeconds = Number(seconds);
+  const totalSeconds = Number.isFinite(numericSeconds) ? Math.max(0, Math.round(numericSeconds)) : 0;
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+}
+
+function formatDateLabel(date) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, 12).toLocaleDateString('es', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function getErrorMessage(error) {
+  return error.response?.data?.message || error.message || 'No se pudieron cargar las estadísticas.';
+}
+
 export function DashboardPage() {
+  const [summary, setSummary] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setError('');
+    setSummary(null);
+
+    async function loadSummary() {
+      try {
+        const { data } = await api.get('/dashboard/summary');
+        if (!data.summary || !Array.isArray(data.summary.callsByDay)) {
+          throw new Error('La respuesta del servidor no tiene el formato esperado.');
+        }
+        if (active) setSummary(data.summary);
+      } catch (requestError) {
+        if (active) setError(getErrorMessage(requestError));
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+
+    loadSummary();
+    return () => {
+      active = false;
+    };
+  }, [retryCount]);
+
+  if (isLoading) {
+    return <div className="card p-6 text-center text-slate-300" role="status">Cargando estadísticas...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="card p-6 text-center">
+        <p className="text-sm text-rose-200" role="alert">{error}</p>
+        <button
+          type="button"
+          onClick={() => setRetryCount((count) => count + 1)}
+          className="mt-4 rounded-xl bg-brand-500 px-4 py-2 font-medium text-white hover:bg-brand-400"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  const callsByDay = summary.callsByDay;
+  const maxCalls = Math.max(1, ...callsByDay.map((day) => Number(day.totalCalls) || 0));
+  const metrics = [
+    { title: 'Llamadas totales', value: summary.totalCalls ?? 0 },
+    { title: 'Llamadas completadas', value: summary.completedCalls ?? 0 },
+    { title: 'Llamadas fallidas', value: summary.failedCalls ?? 0 },
+    { title: 'Duración promedio (min:s)', value: formatDuration(summary.averageDurationSeconds ?? 0) },
+  ];
+
   return (
     <div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -44,41 +99,35 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+      <div className="mt-6">
         <div className="card p-5">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-lg font-semibold text-white">Volumen de llamadas</h3>
-            <span className="text-sm text-slate-400">Últimos 7 días</span>
+            <div className="flex items-center gap-4 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-brand-400" />Totales</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />Completadas</span>
+              <span>Últimos 7 días</span>
+            </div>
           </div>
           <div className="h-72">
             <div className="flex h-full items-end gap-2">
-              {chartData.map((item) => (
-                <div key={item.day} className="flex flex-1 flex-col items-center gap-2">
+              {callsByDay.map((item) => (
+                <div key={item.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
                   <div className="flex h-full w-full items-end justify-center gap-1">
-                    <div className="w-1/2 rounded-t-md bg-brand-400" style={{ height: `${item.calls / 2.2}%` }}></div>
-                    <div className="w-1/2 rounded-t-md bg-emerald-400" style={{ height: `${item.answered / 2.2}%` }}></div>
+                    <div
+                      className="w-1/2 rounded-t-md bg-brand-400"
+                      title={`${item.totalCalls} llamadas totales`}
+                      style={{ height: `${(item.totalCalls / maxCalls) * 100}%` }}
+                    />
+                    <div
+                      className="w-1/2 rounded-t-md bg-emerald-400"
+                      title={`${item.completedCalls} llamadas completadas`}
+                      style={{ height: `${(item.completedCalls / maxCalls) * 100}%` }}
+                    />
                   </div>
-                  <span className="text-xs text-slate-400">{item.day}</span>
+                  <span className="text-center text-xs text-slate-400">{formatDateLabel(item.date)}</span>
                 </div>
               ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="card p-5">
-          <h3 className="mb-4 text-lg font-semibold text-white">Resumen operativo</h3>
-          <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-              <p className="text-sm text-slate-400">Horas pico</p>
-              <p className="mt-2 text-2xl font-bold text-white">10:00 - 12:00</p>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-              <p className="text-sm text-slate-400">NPS promedio</p>
-              <p className="mt-2 text-2xl font-bold text-white">72 / 100</p>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-              <p className="text-sm text-slate-400">Escaladas</p>
-              <p className="mt-2 text-2xl font-bold text-white">8</p>
             </div>
           </div>
         </div>

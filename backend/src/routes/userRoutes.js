@@ -127,6 +127,7 @@ router.patch('/:id', authenticate, requireRole('ADMIN'), async (req, res, next) 
     if (Object.hasOwn(body, 'password')) {
       fields.push('password_hash = ?');
       values.push(await bcrypt.hash(body.password, 10));
+      fields.push('token_version = token_version + 1');
     }
     connection = await pool.getConnection();
     await connection.beginTransaction();

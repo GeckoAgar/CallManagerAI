@@ -5,7 +5,7 @@ const { getJwtSecret } = require('../config/env');
 
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email },
+    { id: user.id, email: user.email, tokenVersion: user.tokenVersion ?? user.token_version ?? 0 },
     getJwtSecret(),
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
@@ -36,14 +36,14 @@ async function registerUser({ name, email, password }) {
   );
 
   const [rows] = await pool.query(
-    `SELECT u.id, u.name, u.email, u.status, r.name AS role_name
+    `SELECT u.id, u.name, u.email, u.status, u.token_version, r.name AS role_name
      FROM users u
      LEFT JOIN roles r ON r.id = u.role_id
      WHERE u.id = ?`,
     [result.insertId]
   );
 
-  return rows[0];
+  return { ...rows[0], tokenVersion: rows[0].token_version };
 }
 
 async function loginUser({ email, password }) {
@@ -71,7 +71,12 @@ async function loginUser({ email, password }) {
   }
 
   return {
-    token: generateToken({ id: user.id, email: user.email, roleName: user.role_name }),
+    token: generateToken({
+      id: user.id,
+      email: user.email,
+      roleName: user.role_name,
+      tokenVersion: user.token_version,
+    }),
     user: {
       id: user.id,
       name: user.name,

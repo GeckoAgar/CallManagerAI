@@ -1,5 +1,7 @@
-﻿import { Link, NavLink } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, NavLink } from 'react-router-dom';
 import { Bell, BriefcaseBusiness, FileText, Headphones, LayoutDashboard, LogOut, Phone, PhoneCall, Search, Settings, ShieldCheck, Users, Volume2 } from 'lucide-react';
+import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 
 const navigation = [
@@ -18,9 +20,25 @@ const navigation = [
 export function AppLayout({ children }) {
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
+  const [logoutError, setLogoutError] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const visibleNavigation = user?.roleName === 'ADMIN'
     ? navigation
-    : navigation.filter((item) => item.to !== '/roles');
+    : navigation.filter((item) => item.to !== '/roles' && item.to !== '/supervision');
+
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setLogoutError('');
+    setIsLoggingOut(true);
+    try {
+      await api.post('/auth/logout');
+      logout();
+    } catch (requestError) {
+      setLogoutError(requestError.response?.data?.message || requestError.message || 'No se pudo cerrar la sesión.');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100">
@@ -52,7 +70,7 @@ export function AppLayout({ children }) {
       </aside>
 
       <div className="flex-1">
-        <header className="flex items-center justify-between border-b border-slate-800 bg-slate-950/80 px-6 py-4 backdrop-blur">
+        <header className="relative flex items-center justify-between border-b border-slate-800 bg-slate-950/80 px-6 py-4 backdrop-blur">
           <div>
             <p className="text-[10px] uppercase tracking-[0.32em] text-brand-300">Operaciones</p>
             <h2 className="text-lg font-semibold text-white">Centro de control</h2>
@@ -67,13 +85,15 @@ export function AppLayout({ children }) {
               <Bell size={18} />
             </button>
             <button
-              onClick={logout}
-              className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:text-white"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:text-white disabled:cursor-wait disabled:opacity-60"
             >
               <LogOut size={16} />
-              Cerrar sesión
+              {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
             </button>
           </div>
+          {logoutError && <p className="absolute right-6 top-16 z-10 rounded-lg border border-rose-500/30 bg-slate-900 px-3 py-2 text-sm text-rose-200" role="alert">{logoutError}</p>}
         </header>
 
         <main className="p-6">

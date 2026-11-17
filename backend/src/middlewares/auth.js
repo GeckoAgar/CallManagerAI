@@ -22,7 +22,7 @@ async function authenticate(req, res, next) {
 
   try {
     const [rows] = await pool.query(
-      `SELECT u.id, u.name, u.email, u.status, u.role_id, r.name AS role_name
+      `SELECT u.id, u.name, u.email, u.status, u.role_id, u.token_version, r.name AS role_name
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
        WHERE u.id = ?`,
@@ -35,6 +35,9 @@ async function authenticate(req, res, next) {
 
     if (rows[0].status !== 'active') {
       return res.status(403).json({ message: 'La cuenta no está activa.' });
+    }
+    if ((decoded.tokenVersion ?? 0) !== rows[0].token_version) {
+      return res.status(401).json({ message: 'La sesión ya no es válida. Inicia sesión nuevamente.' });
     }
 
     req.user = {

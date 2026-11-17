@@ -13,12 +13,11 @@ Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utili
 - Registro e inicio de sesión con contraseñas protegidas mediante bcrypt y autenticación con JWT.
 - Recuperación de sesión y consulta del usuario autenticado.
 - Control de acceso y permisos por rol (`ADMIN` y `USER`) verificados en el backend.
-- CRUD de usuarios, roles, contactos y llamadas.
-- Gestión de grabaciones como metadatos asociados a llamadas; la carga y almacenamiento de audio no están implementados.
+- CRUD de usuarios, roles, contactos, llamadas y grabaciones como metadatos asociados a llamadas; las grabaciones no se cargan ni almacenan como archivos de audio.
 - Softphone de navegador integrado con Twilio Voice: llamadas salientes y entrantes, estado de agente, atender, rechazar, silenciar, colgar e historial.
 - Paneles de reportes y supervisión.
 
-Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS pública para recibir sus webhooks. En el entorno de desarrollo se comprobó una llamada saliente real; configura y prueba las llamadas entrantes por separado.
+Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS pública para recibir sus webhooks. En el entorno de desarrollo se comprobó una llamada saliente real y el teléfono de destino sonó. Esta prueba no demuestra por sí sola que las llamadas entrantes estén verificadas en un entorno real; configúralas y pruébalas por separado.
 
 ## Requisitos
 
@@ -30,19 +29,38 @@ Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS p
 
 ## Configuración de la base de datos
 
-1. Inicia MySQL Server y abre tu conexión en MySQL Workbench.
-2. Ejecuta `backend/database/schema.sql` para crear las tablas de una instalación nueva. El esquema utiliza `CREATE ... IF NOT EXISTS` y `INSERT IGNORE`; no borra tablas ni filas existentes.
+### A. Instalación nueva
+
+1. Inicia MySQL Server y abre la conexión del servidor en MySQL Workbench.
+2. Desde la raíz del proyecto, abre y ejecuta `backend/database/schema.sql`. El script crea la base `callmanagerai`, sus tablas, relaciones y roles iniciales; no hace falta crear la base por separado.
 3. Opcionalmente, ejecuta `backend/database/seeds.sql` para insertar contactos de ejemplo.
-4. Si ya tienes una base creada con una versión anterior, no vuelvas a crearla ni la elimines. Revisa las migraciones indicadas abajo y ejecútalas una sola vez si todavía no están aplicadas.
+4. Crea el archivo local `.env` a partir de `.env.example` y configura las variables requeridas. Consulta **Variables de entorno** para los detalles.
+5. Desde la raíz del proyecto, instala las dependencias e inicia la aplicación:
 
-### Migraciones para una base existente
+   ```powershell
+   npm install
+   npm --prefix backend install
+   npm --prefix frontend install
+   npm run dev
+   ```
 
-Ejecuta cada migración pendiente en Workbench, seleccionando la base `callmanagerai`:
+   El último comando inicia la API y Vite. El backend debe poder conectarse a MySQL para arrancar correctamente.
 
-- `backend/database/migrations/002_contact_owner.sql`: agrega el propietario de contactos. Los registros anteriores se conservan con propietario `NULL`; un administrador puede asignarlos.
-- `backend/database/migrations/003_softphone.sql`: agrega el identificador de llamadas de Twilio y la tabla de presencia de agentes. No elimina llamadas ni usuarios.
+### B. Actualización de una base de datos existente
 
-Las migraciones no deben volver a ejecutarse si sus cambios ya están presentes en la base.
+1. Realiza y verifica una copia de seguridad antes de modificar la base.
+2. En MySQL Workbench, selecciona la base `callmanagerai`. No la elimines ni ejecutes `schema.sql` como sustituto de una actualización: el esquema crea tablas que faltan, pero no actualiza la definición de las tablas existentes.
+3. La carpeta de migraciones contiene las versiones 002 a 006; no hay un archivo 001. Revisa la estructura actual y ejecuta **solo las migraciones pendientes**, en este orden:
+
+   1. `backend/database/migrations/002_contact_owner.sql` — agrega `contacts.owner_id` y su clave foránea a `users`. Los contactos existentes quedan con propietario `NULL`. Requiere que existan las tablas `contacts` y `users`.
+   2. `backend/database/migrations/003_softphone.sql` — agrega `calls.provider_call_sid` con índice único y crea `agent_presence`. Requiere que existan `calls` y `users`. **No es idempotente**: no la ejecutes si la columna o el índice ya están creados; si hubo una ejecución parcial, inspecciona el estado antes de continuar.
+   3. `backend/database/migrations/004_surveillance_queue_call_unique.sql` — agrega el índice único `uq_surveillance_queue_call_id` sobre `surveillance_queue.call_id`. Requiere que exista `surveillance_queue`. Si ya hay más de una entrada para una misma llamada, la creación del índice falla y no elimina registros; resuelve esos duplicados de forma controlada antes de reintentar.
+   4. `backend/database/migrations/005_softphone_device_sessions.sql` — agrega `calls.agent_device_session_id` y `agent_presence.device_session_id`. Requiere que existan `calls` y `agent_presence`, por lo que debe ejecutarse después de la 003.
+   5. `backend/database/migrations/006_auth_token_version.sql` — agrega `users.token_version`, con valor inicial `0`. Requiere que exista `users`.
+
+   Las migraciones 002, 004, 005 y 006 comprueban la existencia de las columnas, la relación o el índice que administran antes de agregarlos. Aun así, verifica que la estructura existente tenga la definición esperada; las comprobaciones se basan en nombres de columnas e índices.
+4. Si falta alguna tabla requerida, hay una ejecución parcial o el esquema difiere de lo esperado, detente y revisa la base antes de continuar. No ejecutes una migración ya aplicada: la 003 no tolera una repetición y las demás no sustituyen una inspección de la estructura.
+5. Una vez aplicadas las migraciones pendientes, configura `.env` como se indica en **Variables de entorno** e instala/inicia la aplicación con los comandos del apartado **Instalación y ejecución**.
 
 ## Variables de entorno
 
@@ -59,6 +77,12 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 No uses los valores de ejemplo en un entorno real. **No subas ni compartas `.env`**: contiene credenciales de la base y secretos de Twilio. `.gitignore` excluye este archivo del repositorio.
+
+También puedes ajustar estas variables incluidas en `.env.example`:
+
+- `PORT`: puerto de la API; el valor de ejemplo y el valor predeterminado del backend son `4000`.
+- `JWT_EXPIRES_IN`: duración de los JWT; el valor de ejemplo y el predeterminado son `8h`.
+- `FRONTEND_URL`: origen permitido para el frontend por CORS; el valor de ejemplo y el predeterminado son `http://localhost:5173`.
 
 ## Configurar Twilio para el softphone
 
@@ -112,7 +136,11 @@ Para crear el primer administrador de forma local:
 npm --prefix backend run create-admin
 ```
 
-El comando solicita la contraseña sin mostrarla y no modifica una cuenta existente. El registro público siempre asigna el rol `USER`.
+Ejecuta el comando desde una terminal interactiva. Solicita la contraseña sin mostrarla, requiere al menos 12 caracteres y no modifica una cuenta existente.
+
+Para crear un usuario común, abre la ruta `/register` del frontend desde la dirección **Local** que muestra Vite y completa el formulario. El registro público asigna automáticamente el rol `USER`.
+
+Usa ambas cuentas para comprobar las diferencias de permisos entre `ADMIN` y `USER`.
 
 ## Llevar el proyecto a otra PC
 
@@ -153,7 +181,7 @@ Si no necesitas conservar usuarios, llamadas u otros datos, puedes omitir la exp
 5. Si vas a restaurar la base, en Workbench selecciona **Server > Data Import**, elige **Import from Self-Contained File**, busca `callmanagerai-backup.sql` y pulsa **Start Import**. Si el respaldo no incluye la creación del esquema, crea primero `callmanagerai` en Workbench y selecciónalo como esquema de destino.
 6. Si vas a empezar con una base vacía, abre y ejecuta `backend/database/schema.sql` en Workbench. No ejecutes `seeds.sql` salvo que quieras los contactos de ejemplo.
 
-Al restaurar un respaldo completo no vuelvas a ejecutar `schema.sql`, los seeds ni las migraciones: el respaldo ya incluye el estado de la base exportada. Conserva el archivo de respaldo hasta comprobar que la aplicación funciona en la nueva PC.
+Si el respaldo corresponde al esquema actual de CallManagerAI, no vuelvas a ejecutar `schema.sql`, los seeds ni las migraciones: la base restaurada ya incluye esos cambios. Si proviene de una versión anterior, identifica primero qué migraciones ya están aplicadas y ejecuta únicamente las pendientes, en el orden indicado en **Actualización de una base de datos existente**. No ejecutes `schema.sql` sobre una base restaurada como sustituto de las migraciones. Conserva el archivo de respaldo hasta comprobar que la aplicación funciona en la nueva PC.
 
 ### 3. Configurar el entorno de la PC nueva
 
@@ -205,14 +233,25 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 
 ### Módulos
 
+- `GET /api/dashboard/summary` — resumen de llamadas y actividad de los últimos siete días; `ADMIN` ve datos globales y `USER` solo sus llamadas. El promedio usa duraciones válidas de llamadas completadas.
 - `/api/users` — listado, creación, edición y eliminación solo para `ADMIN`.
 - `/api/roles` — CRUD solo para `ADMIN`; los roles reservados `ADMIN` y `USER` no se pueden renombrar ni eliminar.
 - `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos.
 - `/api/calls` — CRUD; `USER` solo accede a llamadas asignadas a su cuenta.
 - `/api/recordings` — CRUD de metadatos; `USER` solo accede a grabaciones de sus llamadas.
-- `/api/softphone` — token temporal de Twilio Voice, estado de agente, webhooks y llamadas.
+- `/api/reports/summary`, `/api/reports/calls-by-day` y `/api/reports/by-agent` — métricas de llamadas; `ADMIN` ve datos globales y `USER` solo los propios. `GET /api/reports` conserva su respuesta de grabaciones.
+- `/api/supervision/summary`, `/api/supervision/agents` y `/api/supervision/queue` — supervisión exclusiva para `ADMIN`; la cola permite iniciar monitoreo, escalar y retirar entradas.
+- `/api/softphone` — token temporal de Twilio Voice, presencia, heartbeat, webhooks y llamadas.
 
 La API valida los JWT y consulta el estado y rol actuales del usuario en la base. Las operaciones sensibles y los permisos se verifican en el servidor, no solamente en la interfaz.
+
+## Presencia y cola de supervisión
+
+El softphone envía un heartbeat cada 30 segundos. Si no se recibe uno durante más de 90 segundos, Supervisión calcula el estado efectivo como `offline`; un heartbeat vencido no puede reactivar una presencia desconectada. El cierre de sesión normal también marca la presencia `offline`.
+
+El webhook reserva al agente y registra el `CallSid` en la misma transacción; una repetición del mismo webhook no crea otra asignación ni otro intento de llamada.
+
+Las llamadas `active` asignadas a un agente `USER` activo se incorporan a la cola como `waiting`. Al completar, fallar o retirar la asignación del agente, la entrada se elimina. Un administrador puede pasar una entrada de `waiting` a `monitoring`, escalarla desde `waiting` o `monitoring`, y retirarla de la cola. Esta cola organiza la supervisión y no proporciona escucha ni grabación de audio.
 
 ## Esquema y datos
 

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
 const { authenticate } = require('../middlewares/auth');
+const { runInTransaction, syncSurveillanceQueueForCall } = require('../utils/surveillanceQueue');
 const {
   allowedStatuses,
   hasText,
@@ -97,27 +98,38 @@ router.post('/', async (req, res, next) => {
     const agentId = req.user.roleName === 'ADMIN'
       ? (req.body.agent_id ? Number(req.body.agent_id) : req.user.id)
       : req.user.id;
-    const [result] = await pool.query(
-      `INSERT INTO calls (contact_id, agent_id, phone_number, direction, status, duration_seconds, score)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        contactId,
+    const status = req.body.status || 'queued';
+    const call = await runInTransaction(async (connection) => {
+      const [result] = await connection.query(
+        `INSERT INTO calls (contact_id, agent_id, phone_number, direction, status, duration_seconds, score)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          contactId,
+          agentId,
+          req.body.phone_number.trim(),
+          req.body.direction || 'inbound',
+          status,
+          req.body.duration_seconds == null ? 0 : Number(req.body.duration_seconds),
+          req.body.score == null ? 0 : Number(req.body.score),
+        ]
+      );
+      await syncSurveillanceQueueForCall(connection, {
+        callId: result.insertId,
+        previousStatus: null,
+        previousAgentId: null,
+        status,
         agentId,
-        req.body.phone_number.trim(),
-        req.body.direction || 'inbound',
-        req.body.status || 'queued',
-        req.body.duration_seconds == null ? 0 : Number(req.body.duration_seconds),
-        req.body.score == null ? 0 : Number(req.body.score),
-      ]
-    );
-    const [rows] = await pool.query(
-      `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
-              c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name
-       FROM calls c LEFT JOIN contacts ct ON ct.id = c.contact_id
-       LEFT JOIN users u ON u.id = c.agent_id WHERE c.id = ?`,
-      [result.insertId]
-    );
-    return res.status(201).json({ call: rows[0] });
+      });
+      const [rows] = await connection.query(
+        `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
+                c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name
+         FROM calls c LEFT JOIN contacts ct ON ct.id = c.contact_id
+         LEFT JOIN users u ON u.id = c.agent_id WHERE c.id = ?`,
+        [result.insertId]
+      );
+      return rows[0];
+    });
+    return res.status(201).json({ call });
   } catch (error) {
     return next(error);
   }
@@ -157,22 +169,41 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({ message: 'El contacto no existe o no está disponible para tu cuenta.' });
     }
 
-    const [result] = await pool.query(
-      `UPDATE calls SET ${assignments.join(', ')} WHERE id = ?${filter.clause}`,
-      [...values, id, ...filter.values]
-    );
-    if (!result.affectedRows) {
-      const [existing] = await pool.query(`SELECT id FROM calls WHERE id = ?${filter.clause}`, [id, ...filter.values]);
-      if (!existing.length) return res.status(404).json({ message: 'Llamada no encontrada.' });
-    }
-    const [rows] = await pool.query(
-      `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
-              c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name
-       FROM calls c LEFT JOIN contacts ct ON ct.id = c.contact_id
-       LEFT JOIN users u ON u.id = c.agent_id WHERE c.id = ?`,
-      [id]
-    );
-    return res.json({ call: rows[0] });
+    const call = await runInTransaction(async (connection) => {
+      const [existing] = await connection.query(
+        `SELECT id, agent_id, status FROM calls WHERE id = ?${filter.clause} FOR UPDATE`,
+        [id, ...filter.values]
+      );
+      if (!existing.length) return null;
+
+      const previousCall = existing[0];
+      await connection.query(
+        `UPDATE calls SET ${assignments.join(', ')} WHERE id = ?${filter.clause}`,
+        [...values, id, ...filter.values]
+      );
+      const status = Object.hasOwn(req.body, 'status') ? req.body.status : previousCall.status;
+      const agentId = Object.hasOwn(req.body, 'agent_id')
+        ? (req.body.agent_id ? Number(req.body.agent_id) : null)
+        : previousCall.agent_id;
+      await syncSurveillanceQueueForCall(connection, {
+        callId: id,
+        previousStatus: previousCall.status,
+        previousAgentId: previousCall.agent_id,
+        status,
+        agentId,
+      });
+
+      const [rows] = await connection.query(
+        `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
+                c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name
+         FROM calls c LEFT JOIN contacts ct ON ct.id = c.contact_id
+         LEFT JOIN users u ON u.id = c.agent_id WHERE c.id = ?`,
+        [id]
+      );
+      return rows[0] || null;
+    });
+    if (!call) return res.status(404).json({ message: 'Llamada no encontrada.' });
+    return res.json({ call });
   } catch (error) {
     return next(error);
   }
@@ -183,11 +214,20 @@ router.delete('/:id', async (req, res, next) => {
   if (!isPositiveId(id)) return res.status(400).json({ message: 'Identificador de llamada inválido.' });
   const filter = callAccessFilter(req.user, '');
   try {
-    const [result] = await pool.query(
-      `DELETE FROM calls WHERE id = ?${filter.clause}`,
-      [id, ...filter.values]
-    );
-    if (!result.affectedRows) return res.status(404).json({ message: 'Llamada no encontrada.' });
+    const deleted = await runInTransaction(async (connection) => {
+      const [calls] = await connection.query(
+        `SELECT id FROM calls WHERE id = ?${filter.clause} FOR UPDATE`,
+        [id, ...filter.values]
+      );
+      if (!calls.length) return false;
+      await connection.query('DELETE FROM surveillance_queue WHERE call_id = ?', [id]);
+      const [result] = await connection.query(
+        `DELETE FROM calls WHERE id = ?${filter.clause}`,
+        [id, ...filter.values]
+      );
+      return result.affectedRows > 0;
+    });
+    if (!deleted) return res.status(404).json({ message: 'Llamada no encontrada.' });
     return res.json({ message: 'Llamada eliminada.' });
   } catch (error) {
     return next(error);

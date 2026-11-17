@@ -2,8 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Device } from '@twilio/voice-sdk';
 import { Check, Mic, MicOff, Phone, PhoneCall, PhoneIncoming, PhoneOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import api from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 const phoneNumberPattern = /^\+[1-9]\d{7,14}$/;
+const presenceHeartbeatDelay = 30000;
+const reconnectInitialDelay = 1000;
+const reconnectMaxDelay = 30000;
+const terminalTwilioErrorCodes = new Set([20101, 20103, 20104, 31204, 31205]);
 const presenceLabels = {
   offline: 'Desconectado',
   available: 'Disponible',
@@ -20,11 +25,26 @@ function getErrorMessage(error) {
   return error.response?.data?.message || error.message || 'No se pudo completar la operación.';
 }
 
+function isAuthenticationFailure(error) {
+  return [401, 403].includes(error.response?.status) ||
+    terminalTwilioErrorCodes.has(Number(error.code));
+}
+
 export function SoftphonePage() {
   const deviceRef = useRef(null);
   const callRef = useRef(null);
+  const deviceSessionIdRef = useRef('');
+  const shouldBeAvailableRef = useRef(false);
+  const activateDeviceRef = useRef(null);
+  const stopDeviceRef = useRef(null);
+  const scheduleReconnectRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const userId = useAuthStore((state) => state.user?.id);
+  const authToken = useAuthStore((state) => state.token);
   const [deviceInitialized, setDeviceInitialized] = useState(false);
   const [deviceReady, setDeviceReady] = useState(false);
+  const [deviceSessionId, setDeviceSessionId] = useState('');
   const [presence, setPresence] = useState('offline');
   const [number, setNumber] = useState('');
   const [callState, setCallState] = useState('idle');
@@ -48,8 +68,12 @@ export function SoftphonePage() {
   }, []);
 
   const changePresence = useCallback(async (status) => {
-    await api.patch('/softphone/presence', { status });
+    const { data } = await api.patch('/softphone/presence', {
+      status,
+      ...(deviceSessionIdRef.current ? { deviceSessionId: deviceSessionIdRef.current } : {}),
+    });
     setPresence(status);
+    return data.presence;
   }, []);
 
   const finishCall = useCallback(async () => {
@@ -59,9 +83,14 @@ export function SoftphonePage() {
     setCallLabel('');
     setMuted(false);
     await loadCalls();
-    const nextPresence = deviceRef.current?.state === 'registered' ? 'available' : 'offline';
+    const isRegistered = shouldBeAvailableRef.current && deviceRef.current?.state === 'registered';
     try {
-      await changePresence(nextPresence);
+      if (isRegistered) {
+        await changePresence('available');
+      } else {
+        setPresence('offline');
+        await changePresence('offline');
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     }
@@ -90,22 +119,155 @@ export function SoftphonePage() {
   useEffect(() => {
     let active = true;
     let historyTimer;
+    const sessionId = window.crypto.randomUUID();
+    let activationPromise;
+    deviceSessionIdRef.current = sessionId;
+    setDeviceSessionId(sessionId);
+    shouldBeAvailableRef.current = false;
+    setDeviceInitialized(false);
+    setDeviceReady(false);
+    setPresence('offline');
+
+    function clearReconnectTimer() {
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    }
+
+    async function markOffline() {
+      await api.patch('/softphone/presence', { status: 'offline', deviceSessionId: sessionId });
+    }
+
+    function stopRegistration(message) {
+      shouldBeAvailableRef.current = false;
+      clearReconnectTimer();
+      setDeviceReady(false);
+      setPresence('offline');
+      setIsRegistering(false);
+      if (message) setError(message);
+      markOffline().catch((requestError) => {
+        if (active) setError(getErrorMessage(requestError));
+      });
+      const device = deviceRef.current;
+      if (device && device.state !== 'unregistered') {
+        device.unregister().catch((requestError) => {
+          if (active) setError(getErrorMessage(requestError));
+        });
+      }
+    }
+
+    async function activateDevice(device) {
+      if (!active || !shouldBeAvailableRef.current || deviceRef.current !== device ||
+          device.state !== 'registered') return;
+      if (activationPromise) return activationPromise;
+
+      activationPromise = (async () => {
+        try {
+          const { data } = await api.patch('/softphone/presence/register', { deviceSessionId: sessionId });
+          if (!active || !shouldBeAvailableRef.current || deviceRef.current !== device) {
+            await markOffline();
+            return;
+          }
+          const nextPresence = callRef.current ? 'busy' : data.presence.status;
+          if (nextPresence !== data.presence.status) {
+            await api.patch('/softphone/presence', { status: nextPresence, deviceSessionId: sessionId });
+          }
+          reconnectAttemptsRef.current = 0;
+          clearReconnectTimer();
+          setDeviceReady(true);
+          setPresence(nextPresence);
+          setIsRegistering(false);
+        } catch (requestError) {
+          if (!active) return;
+          setDeviceReady(false);
+          setPresence('offline');
+          setError(getErrorMessage(requestError));
+          if (isAuthenticationFailure(requestError) || requestError.response?.status === 409) {
+            stopRegistration();
+          } else {
+            scheduleReconnectRef.current?.();
+          }
+        } finally {
+          activationPromise = null;
+        }
+      })();
+      return activationPromise;
+    }
+
+    function scheduleReconnect() {
+      if (!active || !shouldBeAvailableRef.current || reconnectTimerRef.current) return;
+      const delay = Math.min(
+        reconnectInitialDelay * (2 ** reconnectAttemptsRef.current),
+        reconnectMaxDelay
+      );
+      reconnectAttemptsRef.current += 1;
+      setIsRegistering(true);
+      reconnectTimerRef.current = window.setTimeout(async () => {
+        reconnectTimerRef.current = null;
+        const device = deviceRef.current;
+        if (!active || !shouldBeAvailableRef.current || !device) {
+          setIsRegistering(false);
+          return;
+        }
+        if (!window.navigator.onLine) {
+          setIsRegistering(false);
+          scheduleReconnect();
+          return;
+        }
+        try {
+          const { data } = await api.get('/softphone/token', { params: { deviceSessionId: sessionId } });
+          if (!active || !shouldBeAvailableRef.current || deviceRef.current !== device) return;
+          device.updateToken(data.token);
+          if (device.state !== 'registered') await device.register();
+          if (device.state === 'registered') await activateDevice(device);
+        } catch (requestError) {
+          if (!active) return;
+          setIsRegistering(false);
+          setError(getErrorMessage(requestError));
+          if (isAuthenticationFailure(requestError) || requestError.response?.status === 409) {
+            stopRegistration();
+          } else {
+            scheduleReconnect();
+          }
+        }
+      }, delay);
+    }
+
+    activateDeviceRef.current = activateDevice;
+    stopDeviceRef.current = stopRegistration;
+    scheduleReconnectRef.current = scheduleReconnect;
+
     async function initialize() {
       await loadCalls();
       try {
-        const { data } = await api.get('/softphone/token');
+        if (!authToken || !userId) return;
+        const { data } = await api.get('/softphone/token', { params: { deviceSessionId: sessionId } });
         if (!active) return;
         const device = new Device(data.token, { logLevel: 'error' });
         deviceRef.current = device;
         setDeviceInitialized(true);
         device.on('registered', () => {
-          if (active) setDeviceReady(true);
+          if (!active) return;
+          if (shouldBeAvailableRef.current) {
+            activateDevice(device);
+          } else {
+            setDeviceReady(false);
+            if (device.state === 'registered') {
+              device.unregister().catch((requestError) => {
+                if (active) setError(getErrorMessage(requestError));
+              });
+            }
+          }
         });
         device.on('unregistered', () => {
-          if (active) {
-            setDeviceReady(false);
-            setPresence('offline');
-          }
+          if (!active) return;
+          setDeviceReady(false);
+          setPresence('offline');
+          markOffline().catch((requestError) => {
+            if (active) setError(getErrorMessage(requestError));
+          });
+          if (shouldBeAvailableRef.current) scheduleReconnect();
         });
         device.on('incoming', (call) => {
           if (!active) return;
@@ -114,14 +276,28 @@ export function SoftphonePage() {
         });
         device.on('tokenWillExpire', async () => {
           try {
-            const { data: refreshed } = await api.get('/softphone/token');
-            if (active) device.updateToken(refreshed.token);
+            const { data: refreshed } = await api.get('/softphone/token', { params: { deviceSessionId: sessionId } });
+            if (active && shouldBeAvailableRef.current && deviceRef.current === device) {
+              device.updateToken(refreshed.token);
+            }
           } catch (requestError) {
-            if (active) setError(getErrorMessage(requestError));
+            if (!active) return;
+            setError(getErrorMessage(requestError));
+            if (isAuthenticationFailure(requestError)) {
+              stopRegistration(getErrorMessage(requestError));
+            } else if (shouldBeAvailableRef.current) {
+              scheduleReconnect();
+            }
           }
         });
         device.on('error', (deviceError) => {
-          if (active) setError(getErrorMessage(deviceError));
+          if (!active) return;
+          setError(getErrorMessage(deviceError));
+          if (isAuthenticationFailure(deviceError)) {
+            stopRegistration(getErrorMessage(deviceError));
+          } else if (shouldBeAvailableRef.current && device.state === 'unregistered') {
+            scheduleReconnect();
+          }
         });
         historyTimer = window.setInterval(loadCalls, 15000);
       } catch (requestError) {
@@ -129,46 +305,148 @@ export function SoftphonePage() {
       }
     }
 
+    function handleNetworkOffline() {
+      setDeviceReady(false);
+      setPresence('offline');
+      markOffline().catch((requestError) => {
+        if (active) setError(getErrorMessage(requestError));
+      });
+    }
+
+    function handleNetworkOnline() {
+      const device = deviceRef.current;
+      if (!active || !shouldBeAvailableRef.current || !device) return;
+      if (device.state === 'registered') {
+        activateDevice(device);
+      } else {
+        scheduleReconnect();
+      }
+    }
+
+    window.addEventListener('offline', handleNetworkOffline);
+    window.addEventListener('online', handleNetworkOnline);
     initialize();
     return () => {
       active = false;
       window.clearInterval(historyTimer);
-      if (deviceRef.current) {
-        deviceRef.current.destroy();
-        deviceRef.current = null;
+      clearReconnectTimer();
+      window.removeEventListener('offline', handleNetworkOffline);
+      window.removeEventListener('online', handleNetworkOnline);
+      shouldBeAvailableRef.current = false;
+      if (deviceRef.current) deviceRef.current.destroy();
+      deviceRef.current = null;
+      if (sessionId) {
+        api.patch('/softphone/presence', { status: 'offline', deviceSessionId: sessionId })
+          .catch((requestError) => console.error('Unable to clear softphone presence on unmount:', requestError));
       }
+      if (deviceSessionIdRef.current === sessionId) deviceSessionIdRef.current = '';
+      activateDeviceRef.current = null;
+      stopDeviceRef.current = null;
+      scheduleReconnectRef.current = null;
       callRef.current = null;
     };
-  }, [bindCallEvents, changePresence, loadCalls]);
+  }, [authToken, bindCallEvents, changePresence, loadCalls, userId]);
 
   useEffect(() => {
-    if (presence === 'offline') return undefined;
-    const heartbeat = window.setInterval(() => {
-      api.patch('/softphone/presence', { status: presence })
-        .catch((requestError) => setError(getErrorMessage(requestError)));
-    }, 30000);
-    return () => window.clearInterval(heartbeat);
-  }, [presence]);
+    if (presence === 'offline' || !deviceSessionId) return undefined;
+
+    let active = true;
+    let timeoutId;
+    let controller;
+    async function sendHeartbeat() {
+      controller = new AbortController();
+      try {
+        const { data } = await api.patch(
+          '/softphone/presence/heartbeat',
+          { deviceSessionId },
+          { signal: controller.signal }
+        );
+        if (active && !data.refreshed) {
+          const device = deviceRef.current;
+          if (data.reason === 'expired' && shouldBeAvailableRef.current && device?.state === 'registered') {
+            await activateDeviceRef.current?.(device);
+          } else {
+            stopDeviceRef.current?.(
+              data.reason === 'session_replaced'
+                ? 'La sesión del dispositivo fue reemplazada por otra conexión.'
+                : ''
+            );
+          }
+        }
+      } catch (requestError) {
+        if (active && requestError.name !== 'CanceledError') {
+          setError(getErrorMessage(requestError));
+          if (isAuthenticationFailure(requestError)) {
+            stopDeviceRef.current?.(getErrorMessage(requestError));
+          }
+        }
+      } finally {
+        if (active) timeoutId = window.setTimeout(sendHeartbeat, presenceHeartbeatDelay);
+      }
+    }
+
+    timeoutId = window.setTimeout(sendHeartbeat, presenceHeartbeatDelay);
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller?.abort();
+    };
+  }, [deviceSessionId, presence]);
 
   async function toggleAvailability() {
     setError('');
     setIsRegistering(true);
-    try {
-      const device = deviceRef.current;
-      if (!device) throw new Error('El teléfono no pudo inicializarse.');
-      if (presence === 'offline') {
-        await device.register();
-        setDeviceReady(true);
-        await changePresence('available');
-      } else {
-        await changePresence('offline');
-        await device.unregister();
-        setDeviceReady(false);
-      }
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
-    } finally {
+    const device = deviceRef.current;
+    if (!device) {
+      setError('El teléfono no pudo inicializarse.');
       setIsRegistering(false);
+      return;
+    }
+
+    if (presence === 'offline') {
+      shouldBeAvailableRef.current = true;
+      try {
+        const { data } = await api.get('/softphone/token', {
+          params: { deviceSessionId: deviceSessionIdRef.current },
+        });
+        if (!shouldBeAvailableRef.current) return;
+        device.updateToken(data.token);
+        if (device.state !== 'registered') await device.register();
+        if (device.state === 'registered') await activateDeviceRef.current?.(device);
+      } catch (requestError) {
+        setDeviceReady(false);
+        setPresence('offline');
+        setError(getErrorMessage(requestError));
+        if (isAuthenticationFailure(requestError)) {
+          stopDeviceRef.current?.(getErrorMessage(requestError));
+        } else {
+          scheduleReconnectRef.current?.();
+        }
+      } finally {
+        setIsRegistering(false);
+      }
+    } else {
+      shouldBeAvailableRef.current = false;
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      try {
+        await changePresence('offline');
+      } catch (requestError) {
+        setError(getErrorMessage(requestError));
+      } finally {
+        setPresence('offline');
+        setDeviceReady(false);
+        if (device.state !== 'unregistered') {
+          try {
+            await device.unregister();
+          } catch (requestError) {
+            setError(getErrorMessage(requestError));
+          }
+        }
+        setIsRegistering(false);
+      }
     }
   }
 
@@ -178,11 +456,19 @@ export function SoftphonePage() {
       setError('Ingresa un número internacional válido, por ejemplo +5491123456789.');
       return;
     }
+    const device = deviceRef.current;
+    if (!device || device.state !== 'registered' || presence !== 'available' ||
+        !shouldBeAvailableRef.current) {
+      setError('Conéctate y verifica que el dispositivo esté disponible antes de llamar.');
+      return;
+    }
     setError('');
     setCallState('connecting');
     setCallLabel('Conectando llamada...');
     try {
-      const call = await deviceRef.current.connect({ params: { To: number } });
+      const call = await device.connect({
+        params: { To: number, DeviceSessionId: deviceSessionIdRef.current },
+      });
       bindCallEvents(call);
     } catch (requestError) {
       setCallState('idle');
