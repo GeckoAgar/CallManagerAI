@@ -11,6 +11,7 @@ const {
   validNonNegativeNumber,
   validScore,
 } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 router.use(authenticate);
 
@@ -45,7 +46,34 @@ async function validateContactAccess(contactId, user) {
 
 router.get('/', async (req, res, next) => {
   const filter = callAccessFilter(req.user);
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM calls c
+         WHERE 1 = 1${filter.clause}`,
+        filter.values
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [calls] = await pool.query(
+        `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
+                c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name
+         FROM calls c
+         LEFT JOIN contacts ct ON ct.id = c.contact_id
+         LEFT JOIN users u ON u.id = c.agent_id
+         WHERE 1 = 1${filter.clause}
+         ORDER BY c.id DESC
+         LIMIT ? OFFSET ?`,
+        [...filter.values, pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(calls, pagination));
+    }
+
     const [calls] = await pool.query(
       `SELECT c.id, c.contact_id, c.agent_id, c.phone_number, c.direction, c.status,
               c.duration_seconds, c.score, c.created_at, ct.name AS contact_name, u.name AS agent_name

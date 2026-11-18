@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import api from '../../services/api';
 
 const numberFormatter = new Intl.NumberFormat('es-AR');
@@ -15,6 +25,14 @@ function formatDateLabel(date) {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, month - 1, day, 12).toLocaleDateString('es', {
     weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function formatDateTick(date) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, 12).toLocaleDateString('es', {
     day: '2-digit',
     month: '2-digit',
   });
@@ -94,7 +112,7 @@ export function ReportsPage() {
   }
 
   const callsByDay = reports.callsByDay;
-  const maxCalls = Math.max(1, ...callsByDay.map((day) => Number(day.totalCalls) || 0));
+  const hasCallData = callsByDay.some((day) => Number(day.totalCalls) > 0);
   const metrics = [
     { label: 'Llamadas totales', value: numberFormatter.format(reports.summary.totalCalls ?? 0), tone: 'brand' },
     { label: 'Llamadas completadas', value: numberFormatter.format(reports.summary.completedCalls ?? 0), tone: 'positive' },
@@ -139,28 +157,46 @@ export function ReportsPage() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tendencia</p>
               <h2 className="mt-1 text-lg font-semibold text-white">Llamadas por día</h2>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-400" aria-label="Leyenda">
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-brand-400" aria-hidden="true" />Totales</span>
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" aria-hidden="true" />Completadas</span>
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-rose-400" aria-hidden="true" />Fallidas</span>
-            </div>
           </div>
-          {callsByDay.length ? (
-            <div className="overflow-x-auto">
-              <div className="h-64 min-w-[480px] border-t border-slate-800 pt-5 sm:h-72 sm:min-w-0">
-                <div className="flex h-full items-end gap-1.5">
-                  {callsByDay.map((item) => (
-                    <div key={item.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                      <div className="flex h-full w-full items-end justify-center gap-0.5">
-                        <div className="min-w-0 flex-1 rounded-t-sm bg-brand-400" title={`${item.totalCalls} llamadas totales`} style={{ height: `${(item.totalCalls / maxCalls) * 100}%` }} />
-                        <div className="min-w-0 flex-1 rounded-t-sm bg-emerald-400" title={`${item.completedCalls} llamadas completadas`} style={{ height: `${(item.completedCalls / maxCalls) * 100}%` }} />
-                        <div className="min-w-0 flex-1 rounded-t-sm bg-rose-400" title={`${item.failedCalls} llamadas fallidas`} style={{ height: `${(item.failedCalls / maxCalls) * 100}%` }} />
-                      </div>
-                      <span className="max-w-full break-words text-center text-[10px] leading-4 text-slate-400 sm:text-xs">{formatDateLabel(item.date)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {hasCallData ? (
+            <div className="h-64 border-t border-slate-800 pt-5 sm:h-72" role="img" aria-label="Gráfico de llamadas totales, completadas y fallidas por día durante los últimos siete días">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={callsByDay} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid stroke="#3b3c35" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={formatDateTick}
+                    tick={{ fill: '#aaa89e', fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#3b3c35' }}
+                    minTickGap={8}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: '#aaa89e', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={34}
+                  />
+                  <Tooltip
+                    labelFormatter={formatDateLabel}
+                    formatter={(value, name) => [value, name]}
+                    contentStyle={{ backgroundColor: '#22231f', border: '1px solid #3b3c35', borderRadius: 8 }}
+                    labelStyle={{ color: '#f4f1e8', marginBottom: 4 }}
+                    itemStyle={{ color: '#d6d3c9', fontSize: 12 }}
+                    cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                  />
+                  <Legend
+                    formatter={(value) => <span className="text-xs text-slate-400">{value}</span>}
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ paddingTop: 12 }}
+                  />
+                  <Bar dataKey="totalCalls" name="Totales" fill="#fbbf24" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="completedCalls" name="Completadas" fill="#34d399" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="failedCalls" name="Fallidas" fill="#fb7185" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-slate-700 px-4 py-12 text-center">

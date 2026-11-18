@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Database, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, ChevronLeft, ChevronRight, Database, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { StatusBadge } from './StatusBadge';
@@ -37,10 +37,33 @@ function displayValue(value, column) {
   return String(value);
 }
 
-export function CrudManager({ title, resource, collection, columns, fields, description }) {
+function getPageItems(currentPage, totalPages) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const pages = [...new Set([1, currentPage - 1, currentPage, currentPage + 1, totalPages])]
+    .filter((page) => page >= 1 && page <= totalPages)
+    .sort((left, right) => left - right);
+
+  return pages.reduce((items, page, index) => {
+    if (index > 0) {
+      const gap = page - pages[index - 1];
+      if (gap === 2) items.push(pages[index - 1] + 1);
+      if (gap > 2) items.push(`ellipsis-${pages[index - 1]}-${page}`);
+    }
+    items.push(page);
+    return items;
+  }, []);
+}
+
+export function CrudManager({ title, resource, columns, fields, description }) {
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.roleName === 'ADMIN';
   const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const skipPageReload = useRef(false);
   const [optionsByField, setOptionsByField] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,22 +76,47 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const loadRows = useCallback(async () => {
+  useEffect(() => {
+    if (skipPageReload.current) {
+      skipPageReload.current = false;
+      return undefined;
+    }
+
+    let active = true;
+    const controller = new AbortController();
     setPageError('');
     setIsLoading(true);
-    try {
-      const { data } = await api.get(resource);
-      setRows(data[collection] || []);
-    } catch (error) {
-      setPageError(getErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [collection, resource]);
 
-  useEffect(() => {
-    loadRows();
-  }, [loadRows]);
+    api.get(resource, { params: { page, limit }, signal: controller.signal })
+      .then(({ data }) => {
+        if (!Array.isArray(data.data) || !Number.isInteger(data.total) ||
+            !Number.isInteger(data.page) || !Number.isInteger(data.limit) ||
+            !Number.isInteger(data.totalPages)) {
+          throw new Error('La respuesta de paginación no es válida.');
+        }
+        if (!active) return;
+        setRows(data.data);
+        setTotal(data.total);
+        if (data.page !== page) {
+          skipPageReload.current = true;
+          setPage(data.page);
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setRows([]);
+        setTotal(0);
+        setPageError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [limit, page, refreshVersion, resource]);
 
   useEffect(() => {
     let active = true;
@@ -135,7 +183,8 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
         await api.post(resource, payload);
       }
       setDialogOpen(false);
-      await loadRows();
+      if (!editing && page !== 1) setPage(1);
+      else setRefreshVersion((version) => version + 1);
     } catch (error) {
       setDialogError(getErrorMessage(error));
     } finally {
@@ -156,7 +205,8 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
     try {
       await api.delete(`${resource}/${deletingRow.id}`);
       setDeletingRow(null);
-      await loadRows();
+      if (rows.length === 1 && page > 1) setPage((currentPage) => currentPage - 1);
+      else setRefreshVersion((version) => version + 1);
     } catch (error) {
       setDeleteError(getErrorMessage(error));
     } finally {
@@ -165,6 +215,9 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
   }
 
   const tableMinWidthClass = columns.length >= 6 ? 'min-w-[900px]' : columns.length >= 4 ? 'min-w-[720px]' : 'min-w-[560px]';
+  const startRecord = total === 0 ? 0 : (page - 1) * limit + 1;
+  const endRecord = Math.min(page * limit, total);
+  const totalPages = Math.ceil(total / limit);
 
   return (
     <section className="card p-4 sm:p-5">
@@ -187,6 +240,9 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
         <div role="alert" className="mb-4 flex items-start gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
           <p>{pageError}</p>
+          <button type="button" onClick={() => setRefreshVersion((version) => version + 1)} className="ml-auto shrink-0 font-semibold underline underline-offset-2">
+            Reintentar
+          </button>
         </div>
       )}
       {isLoading ? (
@@ -241,7 +297,7 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
                 ))}
               </tbody>
             </table>
-          ) : (
+          ) : pageError ? null : (
             <div className="flex flex-col items-center px-5 py-12 text-center">
               <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400">
                 <Database size={20} aria-hidden="true" />
@@ -250,6 +306,67 @@ export function CrudManager({ title, resource, collection, columns, fields, desc
               <p className="mt-1 text-sm text-slate-500">Cuando existan datos, aparecerán en esta lista.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {!isLoading && !pageError && (
+        <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-400">
+            <p aria-live="polite">Mostrando {startRecord}–{endRecord} de {total} registros</p>
+            <label className="flex items-center gap-2">
+              <span>Por página</span>
+              <select
+                value={limit}
+                onChange={(event) => {
+                  setPage(1);
+                  setLimit(Number(event.target.value));
+                }}
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200 focus:border-brand-400 focus:outline-none"
+              >
+                {[10, 25, 50].map((pageSize) => <option key={pageSize} value={pageSize}>{pageSize}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <nav aria-label="Paginación de registros" className="flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              disabled={isLoading || page <= 1}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} aria-hidden="true" /> Anterior
+            </button>
+            {getPageItems(page, totalPages).map((pageItem) => (
+              typeof pageItem === 'number' ? (
+                <button
+                  key={pageItem}
+                  type="button"
+                  onClick={() => setPage(pageItem)}
+                  aria-current={pageItem === page ? 'page' : undefined}
+                  aria-label={`Página ${pageItem}`}
+                  disabled={isLoading || pageItem === page}
+                  className={`min-w-9 rounded-md border px-2.5 py-2 text-sm disabled:cursor-default ${
+                    pageItem === page
+                      ? 'border-brand-500/50 bg-brand-500/15 font-semibold text-brand-200'
+                      : 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {pageItem}
+                </button>
+              ) : (
+                <span key={pageItem} className="px-1 text-slate-500" aria-hidden="true">…</span>
+              )
+            ))}
+            <button
+              type="button"
+              onClick={() => setPage((currentPage) => Math.min(totalPages, currentPage + 1))}
+              disabled={isLoading || totalPages === 0 || page >= totalPages}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente <ChevronRight size={16} aria-hidden="true" />
+            </button>
+          </nav>
         </div>
       )}
 

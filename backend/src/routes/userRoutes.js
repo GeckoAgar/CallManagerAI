@@ -4,6 +4,7 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { authenticate, requireRole } = require('../middlewares/auth');
 const { allowedStatuses, hasText, isPositiveId, validEmail, validEnum } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 async function ensureAdminRemains(connection, userId, nextRoleId, nextStatus) {
   const [currentRows] = await connection.query(
@@ -35,7 +36,29 @@ async function ensureAdminRemains(connection, userId, nextRoleId, nextStatus) {
 }
 
 router.get('/', authenticate, requireRole('ADMIN'), async (req, res, next) => {
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM users u JOIN roles r ON r.id = u.role_id`
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [rows] = await pool.query(
+        `SELECT u.id, u.name, u.email, u.status, u.role_id, r.name AS role_name, u.created_at
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         ORDER BY u.id DESC
+         LIMIT ? OFFSET ?`,
+        [pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(rows, pagination));
+    }
+
     const [rows] = await pool.query(
       `SELECT u.id, u.name, u.email, u.status, u.role_id, r.name AS role_name, u.created_at
        FROM users u

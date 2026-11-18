@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { authenticate } = require('../middlewares/auth');
 const { hasText, isPositiveId, optionalText, validNonNegativeNumber } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 router.use(authenticate);
 
@@ -43,7 +44,32 @@ async function canAccessCall(callId, user) {
 
 router.get('/', async (req, res, next) => {
   const filter = recordingAccessFilter(req.user);
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM recordings r JOIN calls c ON c.id = r.call_id
+         WHERE 1 = 1${filter.clause}`,
+        filter.values
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [recordings] = await pool.query(
+        `SELECT r.id, r.call_id, r.file_name, r.url, r.duration_seconds, r.transcription, r.created_at,
+                c.phone_number, c.agent_id
+         FROM recordings r JOIN calls c ON c.id = r.call_id
+         WHERE 1 = 1${filter.clause}
+         ORDER BY r.id DESC
+         LIMIT ? OFFSET ?`,
+        [...filter.values, pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(recordings, pagination));
+    }
+
     const [recordings] = await pool.query(
       `SELECT r.id, r.call_id, r.file_name, r.url, r.duration_seconds, r.transcription, r.created_at,
               c.phone_number, c.agent_id

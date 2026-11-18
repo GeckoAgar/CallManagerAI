@@ -239,6 +239,7 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 - `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos.
 - `/api/calls` — CRUD; `USER` solo accede a llamadas asignadas a su cuenta.
 - `/api/recordings` — CRUD de metadatos; `USER` solo accede a grabaciones de sus llamadas.
+- Los listados CRUD admiten `?page=1&limit=10` (límite: 10, 25 o 50) y responden con `data`, `total`, `page`, `limit` y `totalPages`. Sin esos parámetros conservan la respuesta completa existente para mantener compatibilidad con otros consumidores de la API.
 - `/api/reports/summary`, `/api/reports/calls-by-day` y `/api/reports/by-agent` — métricas de llamadas; `ADMIN` ve datos globales y `USER` solo los propios. `GET /api/reports` conserva su respuesta de grabaciones.
 - `/api/supervision/summary`, `/api/supervision/agents` y `/api/supervision/queue` — supervisión exclusiva para `ADMIN`; la cola permite iniciar monitoreo, escalar y retirar entradas.
 - `/api/softphone` — token temporal de Twilio Voice, presencia, heartbeat, webhooks y llamadas.
@@ -258,3 +259,27 @@ Las llamadas `active` asignadas a un agente `USER` activo se incorporan a la col
 - Esquema para instalaciones nuevas: `backend/database/schema.sql`.
 - Datos de ejemplo: `backend/database/seeds.sql`.
 - Migraciones para bases existentes: `backend/database/migrations/`.
+
+### Carga de datos para demostración
+
+La carga de demostración agrega usuarios USER, contactos, llamadas, metadatos de grabaciones, presencia inicial y entradas de supervisión. No crea ni modifica administradores, roles, contraseñas existentes, archivos de audio ni enlaces de grabación; tampoco realiza llamadas por Twilio.
+
+Primero revisa el plan sin escribir en la base:
+
+```powershell
+npm --prefix backend run seed-demo-data
+```
+
+Para aplicar la carga, configura una contraseña temporal de al menos 12 caracteres para las nuevas cuentas de agentes y ejecuta:
+
+```powershell
+$env:DEMO_AGENT_PASSWORD = '<contraseña temporal para agentes de demostración>'
+npm --prefix backend run seed-demo-data -- --apply
+Remove-Item Env:\DEMO_AGENT_PASSWORD
+```
+
+Las cuentas nuevas usan correos `@example.test`; las seis activas comparten la contraseña temporal indicada, mientras que las cuentas adicionales quedan inactiva y bloqueada para mostrar esos estados. No uses esta contraseña en producción. La contraseña no se guarda en el script ni se imprime.
+
+La carga es transaccional e idempotente para los registros que conserva el marcador: los usuarios y contactos se reconocen por correo, las llamadas por un identificador reservado `DEMO-CM-A1-...` en `provider_call_sid`, las grabaciones por la llamada asociada y la cola por la llamada. Los identificadores de llamada son marcadores internos, no `CallSid` reales de Twilio. Una repetición omite los registros ya presentes y no los sobrescribe. Si se editan los identificadores de una fila demo, el script puede detenerse para evitar duplicados o relaciones incoherentes.
+
+Los teléfonos y datos de contacto usan valores ficticios. Las grabaciones son exclusivamente metadatos con URL y transcripción nulas y duración cero; no se crean archivos. La presencia inicial se carga como `offline`, ya que `available` y `busy` requieren un dispositivo registrado y heartbeats vigentes. Para demostrar presencia en línea, registra un agente desde **Softphone**; la cola solo simula estados de supervisión y no transmite ni graba audio.

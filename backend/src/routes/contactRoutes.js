@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { authenticate } = require('../middlewares/auth');
 const { allowedStatuses, hasText, isPositiveId, optionalText, validEmail, validEnum } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 router.use(authenticate);
 
@@ -29,7 +30,32 @@ function validateContact(body, partial = false) {
 
 router.get('/', async (req, res, next) => {
   const filter = contactAccessFilter(req.user);
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM contacts c
+         WHERE 1 = 1${filter.clause}`,
+        filter.values
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [contacts] = await pool.query(
+        `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at,
+                u.name AS owner_name
+         FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
+         WHERE 1 = 1${filter.clause}
+         ORDER BY c.id DESC
+         LIMIT ? OFFSET ?`,
+        [...filter.values, pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(contacts, pagination));
+    }
+
     const [contacts] = await pool.query(
       `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at,
               u.name AS owner_name

@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import api from '../../services/api';
 
 function Metric({ title, value, tone }) {
@@ -29,6 +39,14 @@ function formatDateLabel(date) {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, month - 1, day, 12).toLocaleDateString('es', {
     weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function formatDateTick(date) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, 12).toLocaleDateString('es', {
     day: '2-digit',
     month: '2-digit',
   });
@@ -90,7 +108,7 @@ export function DashboardPage() {
   }
 
   const callsByDay = summary.callsByDay;
-  const maxCalls = Math.max(1, ...callsByDay.map((day) => Number(day.totalCalls) || 0));
+  const hasCallData = callsByDay.some((day) => Number(day.totalCalls) > 0);
   const metrics = [
     { title: 'Llamadas totales', value: summary.totalCalls ?? 0, tone: 'brand' },
     { title: 'Llamadas completadas', value: summary.completedCalls ?? 0, tone: 'positive' },
@@ -118,33 +136,54 @@ export function DashboardPage() {
       <section className="card p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-white">Volumen de llamadas</h2>
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-brand-400" />Totales</span>
-            <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />Completadas</span>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
             <span>Últimos 7 días</span>
           </div>
         </div>
-        <div className="h-64 border-t border-slate-800 pt-5 sm:h-72">
-          <div className="flex h-full items-end gap-2">
-            {callsByDay.map((item) => (
-              <div key={item.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                <div className="flex h-full w-full items-end justify-center gap-1">
-                  <div
-                    className="w-1/2 rounded-t-md bg-brand-400"
-                    title={`${item.totalCalls} llamadas totales`}
-                    style={{ height: `${(item.totalCalls / maxCalls) * 100}%` }}
-                  />
-                  <div
-                    className="w-1/2 rounded-t-md bg-emerald-400"
-                    title={`${item.completedCalls} llamadas completadas`}
-                    style={{ height: `${(item.completedCalls / maxCalls) * 100}%` }}
-                  />
-                </div>
-                <span className="text-center text-xs text-slate-400">{formatDateLabel(item.date)}</span>
-              </div>
-            ))}
+        {hasCallData ? (
+          <div className="h-64 border-t border-slate-800 pt-5 sm:h-72" role="img" aria-label="Gráfico de llamadas totales y completadas durante los últimos siete días">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={callsByDay} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <CartesianGrid stroke="#3b3c35" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatDateTick}
+                  tick={{ fill: '#aaa89e', fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#3b3c35' }}
+                  minTickGap={8}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: '#aaa89e', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={34}
+                />
+                <Tooltip
+                  labelFormatter={formatDateLabel}
+                  formatter={(value, name) => [value, name]}
+                  contentStyle={{ backgroundColor: '#22231f', border: '1px solid #3b3c35', borderRadius: 8 }}
+                  labelStyle={{ color: '#f4f1e8', marginBottom: 4 }}
+                  itemStyle={{ color: '#d6d3c9', fontSize: 12 }}
+                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                />
+                <Legend
+                  formatter={(value) => <span className="text-xs text-slate-400">{value}</span>}
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ paddingTop: 12 }}
+                />
+                <Bar dataKey="totalCalls" name="Totales" fill="#fbbf24" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="completedCalls" name="Completadas" fill="#34d399" radius={[3, 3, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-700 px-4 py-12 text-center">
+            <p className="font-medium text-slate-300">No hay llamadas registradas en los últimos siete días.</p>
+          </div>
+        )}
       </section>
     </div>
   );
