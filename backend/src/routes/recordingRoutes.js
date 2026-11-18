@@ -51,21 +51,27 @@ router.get('/', async (req, res, next) => {
 
   try {
     if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' AND (r.file_name LIKE ? OR r.transcription LIKE ?)'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const searchValues = requestedPagination.search ? [searchPattern, searchPattern] : [];
+      const queryValues = [...filter.values, ...searchValues];
       const [[countRow]] = await pool.query(
         `SELECT COUNT(*) AS total
          FROM recordings r JOIN calls c ON c.id = r.call_id
-         WHERE 1 = 1${filter.clause}`,
-        filter.values
+         WHERE 1 = 1${filter.clause}${searchClause}`,
+        queryValues
       );
       const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
       const [recordings] = await pool.query(
         `SELECT r.id, r.call_id, r.file_name, r.url, r.duration_seconds, r.transcription, r.created_at,
                 c.phone_number, c.agent_id
          FROM recordings r JOIN calls c ON c.id = r.call_id
-         WHERE 1 = 1${filter.clause}
+         WHERE 1 = 1${filter.clause}${searchClause}
          ORDER BY r.id DESC
          LIMIT ? OFFSET ?`,
-        [...filter.values, pagination.limit, pagination.offset]
+        [...queryValues, pagination.limit, pagination.offset]
       );
       return res.json(paginatedResponse(recordings, pagination));
     }

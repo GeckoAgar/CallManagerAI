@@ -3,15 +3,20 @@ const pageSizes = new Set([10, 25, 50]);
 function parsePagination(query) {
   const hasPage = Object.hasOwn(query, 'page');
   const hasLimit = Object.hasOwn(query, 'limit');
-  if (!hasPage && !hasLimit) return null;
+  const hasSearch = Object.hasOwn(query, 'search');
+  if (!hasPage && !hasLimit && !hasSearch) return null;
 
   const rawPage = hasPage ? query.page : '1';
   const rawLimit = hasLimit ? query.limit : '10';
+  const rawSearch = hasSearch ? query.search : '';
   if (typeof rawPage !== 'string' || !/^[1-9]\d*$/.test(rawPage)) {
     return { error: 'El parámetro page debe ser un entero positivo.' };
   }
   if (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit) || !pageSizes.has(Number(rawLimit))) {
     return { error: 'El parámetro limit debe ser 10, 25 o 50.' };
+  }
+  if (typeof rawSearch !== 'string' || rawSearch.length > 255) {
+    return { error: 'El parámetro search debe ser texto de hasta 255 caracteres.' };
   }
 
   const page = Number(rawPage);
@@ -19,7 +24,7 @@ function parsePagination(query) {
     return { error: 'El parámetro page está fuera del rango permitido.' };
   }
 
-  return { page, limit: Number(rawLimit) };
+  return { page, limit: Number(rawLimit), search: rawSearch.trim() };
 }
 
 function createPagination(total, requestedPage, limit) {

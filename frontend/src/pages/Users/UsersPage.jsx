@@ -69,6 +69,7 @@ export function UsersPage() {
       collection="users"
       columns={columns}
       fields={fields}
+      searchPlaceholder="Buscar por nombre o correo electrónico..."
       description="Los cambios de rol y estado se validan en el servidor. No se puede eliminar ni desactivar al último administrador activo."
     />
   );

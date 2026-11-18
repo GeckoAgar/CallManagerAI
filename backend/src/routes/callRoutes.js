@@ -53,11 +53,21 @@ router.get('/', async (req, res, next) => {
 
   try {
     if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' AND (c.phone_number LIKE ? OR ct.name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const searchValues = requestedPagination.search
+        ? [searchPattern, searchPattern, searchPattern, searchPattern]
+        : [];
+      const queryValues = [...filter.values, ...searchValues];
       const [[countRow]] = await pool.query(
         `SELECT COUNT(*) AS total
          FROM calls c
-         WHERE 1 = 1${filter.clause}`,
-        filter.values
+         LEFT JOIN contacts ct ON ct.id = c.contact_id
+         LEFT JOIN users u ON u.id = c.agent_id
+         WHERE 1 = 1${filter.clause}${searchClause}`,
+        queryValues
       );
       const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
       const [calls] = await pool.query(
@@ -66,10 +76,10 @@ router.get('/', async (req, res, next) => {
          FROM calls c
          LEFT JOIN contacts ct ON ct.id = c.contact_id
          LEFT JOIN users u ON u.id = c.agent_id
-         WHERE 1 = 1${filter.clause}
+         WHERE 1 = 1${filter.clause}${searchClause}
          ORDER BY c.id DESC
          LIMIT ? OFFSET ?`,
-        [...filter.values, pagination.limit, pagination.offset]
+        [...queryValues, pagination.limit, pagination.offset]
       );
       return res.json(paginatedResponse(calls, pagination));
     }

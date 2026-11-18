@@ -25,6 +25,7 @@ export function RecordingsPage() {
       collection="recordings"
       columns={columns}
       fields={fields}
+      searchPlaceholder="Buscar por archivo o transcripción..."
       description="Este módulo administra los metadatos y URL de grabaciones; la carga y almacenamiento de archivos de audio todavía no está implementada."
     />
   );

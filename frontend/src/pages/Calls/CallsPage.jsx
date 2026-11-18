@@ -41,6 +41,7 @@ export function CallsPage() {
       collection="calls"
       columns={visibleColumns}
       fields={fields}
+      searchPlaceholder="Buscar por teléfono, contacto o agente..."
       description={isAdmin ? 'ADMIN puede gestionar las llamadas del equipo; las eliminaciones relacionadas se rechazan para preservar grabaciones y supervisión.' : 'Solo puedes gestionar las llamadas asignadas a tu cuenta.'}
     />
   );

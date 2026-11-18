@@ -239,7 +239,7 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 - `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos.
 - `/api/calls` — CRUD; `USER` solo accede a llamadas asignadas a su cuenta.
 - `/api/recordings` — CRUD de metadatos; `USER` solo accede a grabaciones de sus llamadas.
-- Los listados CRUD admiten `?page=1&limit=10` (límite: 10, 25 o 50) y responden con `data`, `total`, `page`, `limit` y `totalPages`. Sin esos parámetros conservan la respuesta completa existente para mantener compatibilidad con otros consumidores de la API.
+- Los listados CRUD admiten `?page=1&limit=10&search=texto` (límite: 10, 25 o 50); `search` aplica coincidencias parciales en los campos admitidos. Las respuestas paginadas incluyen `data`, `total`, `page`, `limit` y `totalPages`. Sin parámetros de paginación o búsqueda conservan la respuesta completa existente para mantener compatibilidad con otros consumidores de la API.
 - `/api/reports/summary`, `/api/reports/calls-by-day` y `/api/reports/by-agent` — métricas de llamadas; `ADMIN` ve datos globales y `USER` solo los propios. `GET /api/reports` conserva su respuesta de grabaciones.
 - `/api/supervision/summary`, `/api/supervision/agents` y `/api/supervision/queue` — supervisión exclusiva para `ADMIN`; la cola permite iniciar monitoreo, escalar y retirar entradas.
 - `/api/softphone` — token temporal de Twilio Voice, presencia, heartbeat, webhooks y llamadas.

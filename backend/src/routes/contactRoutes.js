@@ -37,21 +37,29 @@ router.get('/', async (req, res, next) => {
 
   try {
     if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' AND (c.name LIKE ? OR c.company LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const searchValues = requestedPagination.search
+        ? [searchPattern, searchPattern, searchPattern, searchPattern]
+        : [];
+      const queryValues = [...filter.values, ...searchValues];
       const [[countRow]] = await pool.query(
         `SELECT COUNT(*) AS total
          FROM contacts c
-         WHERE 1 = 1${filter.clause}`,
-        filter.values
+         WHERE 1 = 1${filter.clause}${searchClause}`,
+        queryValues
       );
       const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
       const [contacts] = await pool.query(
         `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at,
                 u.name AS owner_name
          FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
-         WHERE 1 = 1${filter.clause}
+         WHERE 1 = 1${filter.clause}${searchClause}
          ORDER BY c.id DESC
          LIMIT ? OFFSET ?`,
-        [...filter.values, pagination.limit, pagination.offset]
+        [...queryValues, pagination.limit, pagination.offset]
       );
       return res.json(paginatedResponse(contacts, pagination));
     }

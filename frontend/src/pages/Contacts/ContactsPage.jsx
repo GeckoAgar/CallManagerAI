@@ -34,6 +34,7 @@ export function ContactsPage() {
       collection="contacts"
       columns={visibleColumns}
       fields={fields}
+      searchPlaceholder="Buscar por nombre, empresa, teléfono o correo..."
       description={isAdmin ? 'ADMIN puede gestionar todos los contactos y asignar un propietario; USER solo administra sus contactos.' : 'Los contactos que crees quedan asociados a tu cuenta.'}
     />
   );

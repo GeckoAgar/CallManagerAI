@@ -17,14 +17,23 @@ router.get('/', async (req, res, next) => {
 
   try {
     if (requestedPagination) {
-      const [[countRow]] = await pool.query('SELECT COUNT(*) AS total FROM roles');
+      const searchClause = requestedPagination.search
+        ? ' WHERE name LIKE ? OR description LIKE ?'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const queryValues = requestedPagination.search ? [searchPattern, searchPattern] : [];
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total FROM roles${searchClause}`,
+        queryValues
+      );
       const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
       const [roles] = await pool.query(
         `SELECT id, name, description, created_at
          FROM roles
+         ${searchClause}
          ORDER BY id ASC
          LIMIT ? OFFSET ?`,
-        [pagination.limit, pagination.offset]
+        [...queryValues, pagination.limit, pagination.offset]
       );
       return res.json(paginatedResponse(roles, pagination));
     }

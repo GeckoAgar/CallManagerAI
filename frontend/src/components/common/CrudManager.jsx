@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Database, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, Database, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { StatusBadge } from './StatusBadge';
@@ -55,13 +55,15 @@ function getPageItems(currentPage, totalPages) {
   }, []);
 }
 
-export function CrudManager({ title, resource, columns, fields, description }) {
+export function CrudManager({ title, resource, columns, fields, description, searchPlaceholder }) {
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.roleName === 'ADMIN';
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [refreshVersion, setRefreshVersion] = useState(0);
   const skipPageReload = useRef(false);
   const [optionsByField, setOptionsByField] = useState({});
@@ -77,6 +79,18 @@ export function CrudManager({ title, resource, columns, fields, description }) {
   const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
+    const nextSearchTerm = searchInput.trim();
+    if (nextSearchTerm === searchTerm) return undefined;
+
+    const timeout = setTimeout(() => {
+      setSearchTerm(nextSearchTerm);
+      setPage(1);
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [searchInput, searchTerm]);
+
+  useEffect(() => {
     if (skipPageReload.current) {
       skipPageReload.current = false;
       return undefined;
@@ -87,7 +101,10 @@ export function CrudManager({ title, resource, columns, fields, description }) {
     setPageError('');
     setIsLoading(true);
 
-    api.get(resource, { params: { page, limit }, signal: controller.signal })
+    const params = { page, limit };
+    if (searchTerm) params.search = searchTerm;
+
+    api.get(resource, { params, signal: controller.signal })
       .then(({ data }) => {
         if (!Array.isArray(data.data) || !Number.isInteger(data.total) ||
             !Number.isInteger(data.page) || !Number.isInteger(data.limit) ||
@@ -116,7 +133,7 @@ export function CrudManager({ title, resource, columns, fields, description }) {
       active = false;
       controller.abort();
     };
-  }, [limit, page, refreshVersion, resource]);
+  }, [limit, page, refreshVersion, resource, searchTerm]);
 
   useEffect(() => {
     let active = true;
@@ -236,6 +253,32 @@ export function CrudManager({ title, resource, columns, fields, description }) {
         </button>
       </div>
 
+      <div className="mb-4">
+        <label htmlFor="crud-search" className="sr-only">Buscar en {title.toLowerCase()}</label>
+        <div className="relative w-full sm:max-w-xl">
+          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+          <input
+            id="crud-search"
+            type="text"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder={searchPlaceholder || 'Buscar registros...'}
+            className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-10 text-sm text-slate-100 placeholder:text-slate-500 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400/40"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput('')}
+              aria-label="Limpiar búsqueda"
+              title="Limpiar búsqueda"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-300"
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {pageError && (
         <div role="alert" className="mb-4 flex items-start gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -302,8 +345,12 @@ export function CrudManager({ title, resource, columns, fields, description }) {
               <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400">
                 <Database size={20} aria-hidden="true" />
               </div>
-              <p className="font-medium text-slate-200">No hay registros</p>
-              <p className="mt-1 text-sm text-slate-500">Cuando existan datos, aparecerán en esta lista.</p>
+              <p className="font-medium text-slate-200">
+                {searchTerm ? 'No se encontraron coincidencias' : 'No hay registros'}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {searchTerm ? 'Prueba con otro término de búsqueda.' : 'Cuando existan datos, aparecerán en esta lista.'}
+              </p>
             </div>
           )}
         </div>

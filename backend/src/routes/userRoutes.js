@@ -43,18 +43,26 @@ router.get('/', authenticate, requireRole('ADMIN'), async (req, res, next) => {
 
   try {
     if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' AND (u.name LIKE ? OR u.email LIKE ?)'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const queryValues = requestedPagination.search ? [searchPattern, searchPattern] : [];
       const [[countRow]] = await pool.query(
         `SELECT COUNT(*) AS total
-         FROM users u JOIN roles r ON r.id = u.role_id`
+         FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE 1 = 1${searchClause}`,
+        queryValues
       );
       const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
       const [rows] = await pool.query(
         `SELECT u.id, u.name, u.email, u.status, u.role_id, r.name AS role_name, u.created_at
          FROM users u
          JOIN roles r ON r.id = u.role_id
+         WHERE 1 = 1${searchClause}
          ORDER BY u.id DESC
          LIMIT ? OFFSET ?`,
-        [pagination.limit, pagination.offset]
+        [...queryValues, pagination.limit, pagination.offset]
       );
       return res.json(paginatedResponse(rows, pagination));
     }
