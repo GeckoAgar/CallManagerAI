@@ -23,6 +23,12 @@ Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utili
 
 Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS pública para recibir sus webhooks. En el entorno de desarrollo se comprobó una llamada saliente real y el teléfono de destino sonó. Esta prueba no demuestra por sí sola que las llamadas entrantes estén verificadas en un entorno real; configúralas y pruébalas por separado.
 
+### Filtro de período en el Dashboard
+
+El filtro aplica a las cuatro tarjetas y a ambos gráficos. Por defecto muestra los últimos siete días incluyendo hoy; también permite elegir un día, una semana de lunes a domingo indicando una fecha, o un mes calendario. Los gráficos agrupan el día por hora y los demás períodos por día. La fecha usada es la de creación de la llamada, en la zona horaria de MySQL. ADMIN ve todas las llamadas elegibles y USER solo las asignadas a su cuenta; se incluyen las llamadas de demostración.
+
+El gráfico de duración promedia las llamadas completadas con duración mayor que cero; los intervalos sin llamadas válidas quedan sin dato. La tarjeta de duración conserva su criterio anterior: incluye duraciones de cero en llamadas completadas y muestra `0:00` si no hay valores. Por eso sus resultados pueden diferir de los del gráfico.
+
 ### Avisos de operaciones
 
 Los Toast se muestran durante unos segundos y pueden cerrarse manualmente. Los errores y las validaciones conservan también su feedback en el formulario o la página. Los indicadores de carga y las confirmaciones de eliminación siguen funcionando de forma independiente.
@@ -261,7 +267,7 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 
 ### Módulos
 
-- `GET /api/dashboard/summary` — resumen de llamadas y actividad de los últimos siete días; `ADMIN` ve datos globales y `USER` solo sus llamadas. El promedio usa duraciones válidas de llamadas completadas.
+- `GET /api/dashboard/summary` — resumen de llamadas filtrado por período; acepta `period=last7days` (predeterminado), `day`, `week` o `month` y, para los tres últimos, `date=AAAA-MM-DD`. `ADMIN` ve datos globales y `USER` solo sus llamadas.
 - `/api/users` — listado, creación, edición y eliminación solo para `ADMIN`.
 - `/api/roles` — CRUD solo para `ADMIN`; los roles reservados `ADMIN` y `USER` no se pueden renombrar ni eliminar.
 - `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos. La eliminación es lógica: `DELETE /api/contacts/:id` oculta el contacto y conserva sus datos y llamadas. Solo `ADMIN` puede consultar `GET /api/contacts?deleted=true` y restaurarlo con `POST /api/contacts/:id/restore`. El estado `inactive` es independiente de la eliminación; no se implementa anonimización.
