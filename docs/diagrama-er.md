@@ -30,6 +30,7 @@ erDiagram
     string phone
     string email
     enum status
+    datetime deleted_at
   }
 
   CALLS {

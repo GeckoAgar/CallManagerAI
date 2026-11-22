@@ -14,6 +14,8 @@ const reportRoutes = require('./routes/reportRoutes');
 const roleRoutes = require('./routes/roleRoutes');
 const supervisionRoutes = require('./routes/supervisionRoutes');
 const softphoneRoutes = require('./routes/softphoneRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const { notificationEvents } = require('./middlewares/notificationEvents');
 
 const app = express();
 
@@ -23,6 +25,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use(notificationEvents);
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'CallManagerAI API', timestamp: new Date().toISOString() });
@@ -38,6 +41,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/softphone', softphoneRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

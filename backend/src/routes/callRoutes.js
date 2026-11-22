@@ -35,10 +35,10 @@ function validateCall(body, partial = false) {
   return null;
 }
 
-async function validateContactAccess(contactId, user) {
+async function validateContactAccess(connection, contactId, user) {
   if (contactId == null || contactId === '') return true;
-  const [contacts] = await pool.query(
-    `SELECT id FROM contacts WHERE id = ?${user.roleName === 'ADMIN' ? '' : ' AND owner_id = ?'}`,
+  const [contacts] = await connection.query(
+    `SELECT id FROM contacts WHERE id = ? AND deleted_at IS NULL${user.roleName === 'ADMIN' ? '' : ' AND owner_id = ?'} FOR UPDATE`,
     user.roleName === 'ADMIN' ? [contactId] : [contactId, user.id]
   );
   return contacts.length > 0;
@@ -130,14 +130,12 @@ router.post('/', async (req, res, next) => {
 
   try {
     const contactId = req.body.contact_id || null;
-    if (!(await validateContactAccess(contactId, req.user))) {
-      return res.status(400).json({ message: 'El contacto no existe o no está disponible para tu cuenta.' });
-    }
     const agentId = req.user.roleName === 'ADMIN'
       ? (req.body.agent_id ? Number(req.body.agent_id) : req.user.id)
       : req.user.id;
     const status = req.body.status || 'queued';
     const call = await runInTransaction(async (connection) => {
+      if (!(await validateContactAccess(connection, contactId, req.user))) return null;
       const [result] = await connection.query(
         `INSERT INTO calls (contact_id, agent_id, phone_number, direction, status, duration_seconds, score)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -167,6 +165,7 @@ router.post('/', async (req, res, next) => {
       );
       return rows[0];
     });
+    if (!call) return res.status(400).json({ message: 'El contacto no existe o no está disponible para tu cuenta.' });
     return res.status(201).json({ call });
   } catch (error) {
     return next(error);
@@ -203,18 +202,19 @@ router.patch('/:id', async (req, res, next) => {
   if (!assignments.length) return res.status(400).json({ message: 'No hay campos para actualizar.' });
 
   try {
-    if (Object.hasOwn(req.body, 'contact_id') && !(await validateContactAccess(req.body.contact_id, req.user))) {
-      return res.status(400).json({ message: 'El contacto no existe o no está disponible para tu cuenta.' });
-    }
-
-    const call = await runInTransaction(async (connection) => {
+    const result = await runInTransaction(async (connection) => {
       const [existing] = await connection.query(
-        `SELECT id, agent_id, status FROM calls WHERE id = ?${filter.clause} FOR UPDATE`,
+        `SELECT id, contact_id, agent_id, status FROM calls WHERE id = ?${filter.clause} FOR UPDATE`,
         [id, ...filter.values]
       );
-      if (!existing.length) return null;
+      if (!existing.length) return { error: 'not-found' };
 
       const previousCall = existing[0];
+      if (Object.hasOwn(req.body, 'contact_id') &&
+          String(req.body.contact_id || '') !== String(previousCall.contact_id || '') &&
+          !(await validateContactAccess(connection, req.body.contact_id, req.user))) {
+        return { error: 'invalid-contact' };
+      }
       await connection.query(
         `UPDATE calls SET ${assignments.join(', ')} WHERE id = ?${filter.clause}`,
         [...values, id, ...filter.values]
@@ -238,10 +238,13 @@ router.patch('/:id', async (req, res, next) => {
          LEFT JOIN users u ON u.id = c.agent_id WHERE c.id = ?`,
         [id]
       );
-      return rows[0] || null;
+      return { call: rows[0] };
     });
-    if (!call) return res.status(404).json({ message: 'Llamada no encontrada.' });
-    return res.json({ call });
+    if (result.error === 'not-found') return res.status(404).json({ message: 'Llamada no encontrada.' });
+    if (result.error === 'invalid-contact') {
+      return res.status(400).json({ message: 'El contacto no existe o no está disponible para tu cuenta.' });
+    }
+    return res.json({ call: result.call });
   } catch (error) {
     return next(error);
   }

@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
 import api from '../../services/api';
+import { getActionErrorMessage } from '../../services/actionError';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((state) => state.setSession);
+  const notify = useToastStore((state) => state.notify);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -24,8 +27,10 @@ export function LoginPage() {
         user: data.user,
         token: data.token,
       });
+      notify('success', 'Inicio de sesión exitoso.');
       navigate('/');
     } catch (requestError) {
+      notify('error', getActionErrorMessage(requestError), { announce: false });
       setError(
         requestError.response?.data?.message ||
         'No se pudo conectar con el servidor. Verifica que la API y MySQL estén disponibles.'
@@ -53,7 +58,7 @@ export function LoginPage() {
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">Iniciar sesión</h2>
         </div>
 
-        <form className="space-y-5" onSubmit={onSubmit}>
+        <form className="space-y-5" onSubmit={onSubmit} aria-describedby={error ? 'login-error' : undefined}>
           <div>
             <label className="mb-2 block text-sm text-slate-300">Correo</label>
             <input type="email" name="email" autoComplete="email" required className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-brand-400 focus:outline-none" />
@@ -62,7 +67,7 @@ export function LoginPage() {
             <label className="mb-2 block text-sm text-slate-300">Contraseña</label>
             <input type="password" name="password" autoComplete="current-password" required className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-brand-400 focus:outline-none" />
           </div>
-          {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
+          {error && <p id="login-error" role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
           <button type="submit" disabled={isSubmitting} className="w-full rounded-lg bg-brand-500 px-4 py-3 font-medium text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-60">
             {isSubmitting ? 'Ingresando...' : 'Entrar'}
           </button>

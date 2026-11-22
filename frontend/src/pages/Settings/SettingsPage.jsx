@@ -157,7 +157,7 @@ export function SettingsPage() {
           description="Opciones disponibles para tu cuenta."
         />
         <p className="rounded-lg border border-dashed border-slate-700 px-4 py-5 text-sm leading-6 text-slate-400">
-          No hay un sistema de notificaciones configurable integrado. No se muestran interruptores sin un comportamiento asociado.
+          Los avisos temporales aparecen automáticamente. Consulta y administra el historial de eventos desde la campana de la barra superior. No hay opciones de notificación configurables.
         </p>
       </section>
 

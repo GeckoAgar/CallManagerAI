@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Database, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, Database, LoaderCircle, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import api from '../../services/api';
+import { getActionErrorMessage } from '../../services/actionError';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
 import { StatusBadge } from './StatusBadge';
 
+const resourceMessages = {
+  '/users': { name: 'Usuario', created: 'creado', updated: 'actualizado', deleted: 'eliminado' },
+  '/roles': { name: 'Rol', created: 'creado', updated: 'actualizado', deleted: 'eliminado' },
+  '/contacts': { name: 'Contacto', created: 'creado', updated: 'actualizado', deleted: 'eliminado' },
+  '/calls': { name: 'Llamada', created: 'creada', updated: 'actualizada', deleted: 'eliminada' },
+  '/recordings': { name: 'Grabación', created: 'creada', updated: 'actualizada', deleted: 'eliminada' },
+};
+
 function getErrorMessage(error) {
-  return error.response?.data?.message || 'No se pudo completar la operación. Inténtalo nuevamente.';
+  if (error.response || error.request) return getActionErrorMessage(error);
+  return 'No se pudo completar la operación. Inténtalo nuevamente.';
 }
 
 function displayValue(value, column) {
@@ -55,15 +67,23 @@ function getPageItems(currentPage, totalPages) {
   }, []);
 }
 
-export function CrudManager({ title, resource, columns, fields, description, searchPlaceholder }) {
+export function CrudManager({ title, resource, columns, fields, description, searchPlaceholder, softDelete = false, showDeleted = false }) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const selectedId = showDeleted ? null : params.get('highlight');
+  const selectedSearch = params.get('search') || '';
+  const selectedRowRef = useRef(null);
+  const focusedLocationRef = useRef(null);
   const user = useAuthStore((state) => state.user);
+  const notify = useToastStore((state) => state.notify);
   const isAdmin = user?.roleName === 'ADMIN';
   const [rows, setRows] = useState([]);
+  const [loadedQuery, setLoadedQuery] = useState(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState(selectedId ? selectedSearch : '');
+  const [searchTerm, setSearchTerm] = useState(selectedId ? selectedSearch : '');
   const [refreshVersion, setRefreshVersion] = useState(0);
   const skipPageReload = useRef(false);
   const [optionsByField, setOptionsByField] = useState({});
@@ -77,6 +97,24 @@ export function CrudManager({ title, resource, columns, fields, description, sea
   const [deletingRow, setDeletingRow] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [restoringId, setRestoringId] = useState(null);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setSearchInput(selectedSearch);
+    setSearchTerm(selectedSearch);
+    setPage(1);
+  }, [location.key, selectedId, selectedSearch]);
+
+  useEffect(() => {
+    if (!isLoading && selectedId && focusedLocationRef.current !== location.key &&
+        loadedQuery?.search === selectedSearch && loadedQuery.page === 1 && searchTerm === selectedSearch &&
+        searchInput.trim() === selectedSearch && selectedRowRef.current) {
+      selectedRowRef.current.scrollIntoView({ block: 'center', behavior: 'auto' });
+      selectedRowRef.current.focus({ preventScroll: true });
+      focusedLocationRef.current = location.key;
+    }
+  }, [isLoading, rows, loadedQuery, location.key, selectedId, selectedSearch, searchInput, searchTerm]);
 
   useEffect(() => {
     const nextSearchTerm = searchInput.trim();
@@ -102,6 +140,7 @@ export function CrudManager({ title, resource, columns, fields, description, sea
     setIsLoading(true);
 
     const params = { page, limit };
+    if (showDeleted) params.deleted = 'true';
     if (searchTerm) params.search = searchTerm;
 
     api.get(resource, { params, signal: controller.signal })
@@ -113,6 +152,7 @@ export function CrudManager({ title, resource, columns, fields, description, sea
         }
         if (!active) return;
         setRows(data.data);
+        setLoadedQuery({ search: searchTerm, page: data.page });
         setTotal(data.total);
         if (data.page !== page) {
           skipPageReload.current = true;
@@ -133,7 +173,7 @@ export function CrudManager({ title, resource, columns, fields, description, sea
       active = false;
       controller.abort();
     };
-  }, [limit, page, refreshVersion, resource, searchTerm]);
+  }, [limit, page, refreshVersion, resource, searchTerm, showDeleted]);
 
   useEffect(() => {
     let active = true;
@@ -154,6 +194,14 @@ export function CrudManager({ title, resource, columns, fields, description, sea
 
   const visibleFields = fields.filter((field) => !field.adminOnly || isAdmin);
   const resourceLabel = title.replace(/^Gestión de /i, '').toLowerCase();
+  const messages = resourceMessages[resource] || { name: 'Registro', created: 'creado', updated: 'actualizado', deleted: 'eliminado' };
+
+  function showValidationWarning() {
+    const message = 'Revisa los campos obligatorios y los datos ingresados.';
+    if (!useToastStore.getState().toasts.some((toast) => toast.type === 'warning' && toast.message === message && !toast.exiting)) {
+      notify('warning', message);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -187,6 +235,7 @@ export function CrudManager({ title, resource, columns, fields, description, sea
       }
       if (value === '' && field.type === 'password' && !editing) {
         setDialogError('Completa la contraseña.');
+        showValidationWarning();
         setIsSaving(false);
         return;
       }
@@ -199,11 +248,13 @@ export function CrudManager({ title, resource, columns, fields, description, sea
       } else {
         await api.post(resource, payload);
       }
+      notify('success', `${messages.name} ${editing ? messages.updated : messages.created} correctamente.`);
       setDialogOpen(false);
       if (!editing && page !== 1) setPage(1);
       else setRefreshVersion((version) => version + 1);
     } catch (error) {
       setDialogError(getErrorMessage(error));
+      notify('error', getActionErrorMessage(error), { announce: false });
     } finally {
       setIsSaving(false);
     }
@@ -221,13 +272,32 @@ export function CrudManager({ title, resource, columns, fields, description, sea
     setIsDeleting(true);
     try {
       await api.delete(`${resource}/${deletingRow.id}`);
+      notify('success', `${messages.name} ${messages.deleted} correctamente.`);
       setDeletingRow(null);
       if (rows.length === 1 && page > 1) setPage((currentPage) => currentPage - 1);
       else setRefreshVersion((version) => version + 1);
     } catch (error) {
       setDeleteError(getErrorMessage(error));
+      notify('error', getActionErrorMessage(error), { announce: false });
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function restore(row) {
+    if (restoringId !== null) return;
+    setPageError('');
+    setRestoringId(row.id);
+    try {
+      await api.post(`${resource}/${row.id}/restore`);
+      notify('success', 'Contacto restaurado correctamente.');
+      if (rows.length === 1 && page > 1) setPage((currentPage) => currentPage - 1);
+      else setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setPageError(getErrorMessage(error));
+      notify('error', getActionErrorMessage(error), { announce: false });
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -244,13 +314,15 @@ export function CrudManager({ title, resource, columns, fields, description, sea
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">{title}</h1>
           {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{description}</p>}
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
-        >
-          <Plus size={16} aria-hidden="true" /> Nuevo registro
-        </button>
+        {!showDeleted && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
+          >
+            <Plus size={16} aria-hidden="true" /> Nuevo registro
+          </button>
+        )}
       </div>
 
       <div className="mb-4">
@@ -305,7 +377,12 @@ export function CrudManager({ title, resource, columns, fields, description, sea
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-800/80 transition-colors hover:bg-slate-800/30">
+                  <tr
+                    key={row.id}
+                    ref={selectedId === String(row.id) && searchTerm === selectedSearch ? selectedRowRef : null}
+                    tabIndex={selectedId === String(row.id) && searchTerm === selectedSearch ? -1 : undefined}
+                    className={`border-t border-slate-800/80 transition-colors hover:bg-slate-800/30 ${selectedId === String(row.id) && searchTerm === selectedSearch ? 'bg-brand-500/15 outline outline-2 outline-brand-400' : ''}`}
+                  >
                     {columns.map((column) => (
                       <td
                         key={column.key}
@@ -316,24 +393,40 @@ export function CrudManager({ title, resource, columns, fields, description, sea
                     ))}
                     <td className="px-4 py-3.5 align-top">
                       <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(row)}
-                          aria-label={`Editar registro ${row.id}`}
-                          title="Editar"
-                          className="rounded-md border border-slate-700 p-2 text-slate-300 transition-colors hover:border-brand-500/50 hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
-                        >
-                          <Pencil size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => requestDelete(row)}
-                          aria-label={`Eliminar registro ${row.id}`}
-                          title="Eliminar"
-                          className="rounded-md border border-rose-900/70 p-2 text-rose-300 transition-colors hover:border-rose-500/50 hover:bg-rose-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300"
-                        >
-                          <Trash2 size={15} aria-hidden="true" />
-                        </button>
+                        {showDeleted ? (
+                          <button
+                            type="button"
+                            onClick={() => restore(row)}
+                            disabled={restoringId !== null}
+                            aria-label={`Restaurar registro ${row.id}`}
+                            title="Restaurar"
+                            className="inline-flex items-center gap-2 rounded-md border border-emerald-700 px-3 py-2 text-emerald-200 hover:bg-emerald-950 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <RotateCcw size={15} aria-hidden="true" />
+                            {restoringId === row.id ? 'Restaurando...' : 'Restaurar'}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(row)}
+                              aria-label={`Editar registro ${row.id}`}
+                              title="Editar"
+                              className="rounded-md border border-slate-700 p-2 text-slate-300 transition-colors hover:border-brand-500/50 hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
+                            >
+                              <Pencil size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => requestDelete(row)}
+                              aria-label={`Eliminar registro ${row.id}`}
+                              title="Eliminar"
+                              className="rounded-md border border-rose-900/70 p-2 text-rose-300 transition-colors hover:border-rose-500/50 hover:bg-rose-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -430,7 +523,14 @@ export function CrudManager({ title, resource, columns, fields, description, sea
               </button>
             </div>
 
-            <form className="space-y-5" onSubmit={submitForm}>
+            <form
+              className="space-y-5"
+              onSubmit={submitForm}
+              onInvalid={(event) => {
+                if (event.target === event.currentTarget.querySelector(':invalid')) showValidationWarning();
+              }}
+              aria-describedby={dialogError ? 'crud-dialog-error' : undefined}
+            >
               <div className="grid gap-4 sm:grid-cols-2">
                 {visibleFields.map((field) => (
                   <label key={field.name} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
@@ -446,6 +546,14 @@ export function CrudManager({ title, resource, columns, fields, description, sea
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-brand-400 focus:outline-none"
                       >
                         <option value="">{field.placeholder || 'Seleccionar...'}</option>
+                        {editing && field.currentLabelKey && values[field.name] &&
+                          !(field.options || optionsByField[field.name] || []).some(
+                            (option) => String(option[field.valueKey || 'id']) === String(values[field.name])
+                          ) && (
+                            <option value={values[field.name]}>
+                              {editing[field.currentLabelKey] || `ID ${values[field.name]}`} (no disponible)
+                            </option>
+                          )}
                         {(field.options || optionsByField[field.name] || []).map((option) => (
                           <option key={option[field.valueKey || 'id']} value={option[field.valueKey || 'id']}>
                             {option[field.labelKey || 'name']}
@@ -481,7 +589,7 @@ export function CrudManager({ title, resource, columns, fields, description, sea
               </div>
 
               {dialogError && (
-                <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
+                <div id="crud-dialog-error" role="alert" className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
                   <AlertCircle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
                   <p>{dialogError}</p>
                 </div>
@@ -500,16 +608,18 @@ export function CrudManager({ title, resource, columns, fields, description, sea
 
       {deletingRow && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation">
-          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-5 shadow-soft sm:p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-5 shadow-soft sm:p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby={deleteError ? 'delete-dialog-description delete-dialog-error' : 'delete-dialog-description'}>
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300">
               <Trash2 size={18} aria-hidden="true" />
             </div>
             <h2 id="delete-dialog-title" className="text-lg font-semibold text-white">Confirmar eliminación</h2>
             <p id="delete-dialog-description" className="mt-2 text-sm leading-6 text-slate-300">
-              ¿Eliminar este registro de {resourceLabel}? Esta acción no se puede deshacer.
+              {softDelete
+                ? 'El contacto dejará de aparecer en la lista habitual. Se conservarán sus datos y llamadas; un administrador podrá restaurarlo.'
+                : `¿Eliminar este registro de ${resourceLabel}? Esta acción no se puede deshacer.`}
             </p>
             {deleteError && (
-              <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
+              <div id="delete-dialog-error" role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
                 <AlertCircle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <p>{deleteError}</p>
               </div>

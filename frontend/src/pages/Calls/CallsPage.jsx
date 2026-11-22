@@ -14,7 +14,7 @@ const columns = [
 
 const fields = [
   { name: 'phone_number', label: 'Número telefónico', required: true, maxLength: 30 },
-  { name: 'contact_id', label: 'Contacto', type: 'select', optional: true, optionsEndpoint: '/contacts', optionsCollection: 'contacts' },
+  { name: 'contact_id', label: 'Contacto', type: 'select', optional: true, optionsEndpoint: '/contacts', optionsCollection: 'contacts', currentLabelKey: 'contact_name' },
   { name: 'agent_id', label: 'Asesor', type: 'select', optional: true, adminOnly: true, optionsEndpoint: '/users', optionsCollection: 'users' },
   { name: 'direction', label: 'Dirección', type: 'select', required: true, defaultValue: 'inbound', options: [
     { id: 'inbound', name: 'Entrante' },

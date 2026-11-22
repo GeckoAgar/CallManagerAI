@@ -14,10 +14,36 @@ Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utili
 - Recuperación de sesión y consulta del usuario autenticado.
 - Control de acceso y permisos por rol (`ADMIN` y `USER`) verificados en el backend.
 - CRUD de usuarios, roles, contactos, llamadas y grabaciones como metadatos asociados a llamadas; las grabaciones no se cargan ni almacenan como archivos de audio.
+- Baja lógica de contactos con conservación del historial; ADMIN puede consultar y restaurar contactos eliminados.
+- Avisos Toast para resultados de los CRUD y acciones de sesión, con indicadores de carga y errores en pantalla.
+- Buscador global con resultados paginados y filtrados por los permisos existentes.
+- Centro de notificaciones por usuario persistido en MySQL para eventos seleccionados.
 - Softphone de navegador integrado con Twilio Voice: llamadas salientes y entrantes, estado de agente, atender, rechazar, silenciar, colgar e historial.
 - Paneles de reportes y supervisión.
 
 Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS pública para recibir sus webhooks. En el entorno de desarrollo se comprobó una llamada saliente real y el teléfono de destino sonó. Esta prueba no demuestra por sí sola que las llamadas entrantes estén verificadas en un entorno real; configúralas y pruébalas por separado.
+
+### Avisos de operaciones
+
+Los Toast se muestran durante unos segundos y pueden cerrarse manualmente. Los errores y las validaciones conservan también su feedback en el formulario o la página. Los indicadores de carga y las confirmaciones de eliminación siguen funcionando de forma independiente.
+
+Para emitir un aviso desde otra sección, usa `useToastStore.getState().notify('info', 'Mensaje')`; los tipos son `success`, `error`, `warning` e `info`. Si el mismo error ya se anuncia mediante un elemento `role="alert"` en pantalla, pasa `{ announce: false }` como tercer argumento para evitar una segunda lectura por el lector de pantalla.
+
+Las pruebas del estado de los avisos se ejecutan desde la raíz con:
+
+```powershell
+node --test frontend\test\toastStore.test.mjs
+```
+
+### Buscador y centro de notificaciones
+
+El buscador consulta los listados paginados del backend después de 350 ms y muestra hasta 10 resultados por módulo. Busca contactos, llamadas y grabaciones; para ADMIN también busca usuarios y roles. Utiliza los campos de búsqueda de cada módulo, no el identificador de registro. Al elegir un resultado abre el listado filtrado y destaca la fila; el registro puede haber cambiado desde la búsqueda.
+
+La campana muestra inicialmente las últimas 50 notificaciones del usuario y permite cargar las anteriores; indica el total de no leídas y permite marcar una o todas como leídas y eliminar avisos individuales. Se actualiza al abrirla y cada 15 segundos. El historial es distinto de los Toast y se conserva entre sesiones y dispositivos. Cada usuario, incluso ADMIN, solo puede consultar y modificar sus propias notificaciones.
+
+Se registran eliminaciones de los cinco módulos, restauraciones de contactos, creaciones y modificaciones administrativas de usuarios y roles, y cierres de sesión exitosos. No se registran operaciones fallidas ni cada Toast. Los eventos se insertan después de confirmar la respuesta HTTP, de forma asíncrona: si falla la inserción se informa en el registro del servidor, pero la operación original no se revierte y ese aviso puede faltar. Esto no es una auditoría transaccional. Al borrar una cuenta se borran sus propias notificaciones.
+
+Las pruebas con una base temporal aislada se ejecutan desde la raíz con `node --test backend\test\searchNotifications.test.js`; requieren MySQL y permisos para crear y eliminar esa base temporal.
 
 ## Requisitos
 
@@ -50,15 +76,17 @@ Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS p
 
 1. Realiza y verifica una copia de seguridad antes de modificar la base.
 2. En MySQL Workbench, selecciona la base `callmanagerai`. No la elimines ni ejecutes `schema.sql` como sustituto de una actualización: el esquema crea tablas que faltan, pero no actualiza la definición de las tablas existentes.
-3. La carpeta de migraciones contiene las versiones 002 a 006; no hay un archivo 001. Revisa la estructura actual y ejecuta **solo las migraciones pendientes**, en este orden:
+3. La carpeta de migraciones contiene las versiones 002 a 008; no hay un archivo 001. Revisa la estructura actual y ejecuta **solo las migraciones pendientes**, en este orden:
 
    1. `backend/database/migrations/002_contact_owner.sql` — agrega `contacts.owner_id` y su clave foránea a `users`. Los contactos existentes quedan con propietario `NULL`. Requiere que existan las tablas `contacts` y `users`.
    2. `backend/database/migrations/003_softphone.sql` — agrega `calls.provider_call_sid` con índice único y crea `agent_presence`. Requiere que existan `calls` y `users`. **No es idempotente**: no la ejecutes si la columna o el índice ya están creados; si hubo una ejecución parcial, inspecciona el estado antes de continuar.
    3. `backend/database/migrations/004_surveillance_queue_call_unique.sql` — agrega el índice único `uq_surveillance_queue_call_id` sobre `surveillance_queue.call_id`. Requiere que exista `surveillance_queue`. Si ya hay más de una entrada para una misma llamada, la creación del índice falla y no elimina registros; resuelve esos duplicados de forma controlada antes de reintentar.
    4. `backend/database/migrations/005_softphone_device_sessions.sql` — agrega `calls.agent_device_session_id` y `agent_presence.device_session_id`. Requiere que existan `calls` y `agent_presence`, por lo que debe ejecutarse después de la 003.
    5. `backend/database/migrations/006_auth_token_version.sql` — agrega `users.token_version`, con valor inicial `0`. Requiere que exista `users`.
+   6. `backend/database/migrations/007_contact_soft_delete.sql` — agrega `contacts.deleted_at` para la baja lógica; los contactos existentes quedan visibles. Requiere que exista `contacts`.
+   7. `backend/database/migrations/008_notifications.sql` — crea `notifications` vinculada a `users` para el historial personal. No modifica filas existentes; al eliminar un usuario se eliminan sus notificaciones. Requiere `users`. Si la tabla ya existe, comprueba su definición antes de continuar.
 
-   Las migraciones 002, 004, 005 y 006 comprueban la existencia de las columnas, la relación o el índice que administran antes de agregarlos. Aun así, verifica que la estructura existente tenga la definición esperada; las comprobaciones se basan en nombres de columnas e índices.
+   Las migraciones 002, 004, 005, 006 y 007 comprueban la existencia de las columnas, la relación o el índice que administran antes de agregarlos. Aun así, verifica que la estructura existente tenga la definición esperada; las comprobaciones se basan en nombres de columnas e índices.
 4. Si falta alguna tabla requerida, hay una ejecución parcial o el esquema difiere de lo esperado, detente y revisa la base antes de continuar. No ejecutes una migración ya aplicada: la 003 no tolera una repetición y las demás no sustituyen una inspección de la estructura.
 5. Una vez aplicadas las migraciones pendientes, configura `.env` como se indica en **Variables de entorno** e instala/inicia la aplicación con los comandos del apartado **Instalación y ejecución**.
 
@@ -236,7 +264,7 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 - `GET /api/dashboard/summary` — resumen de llamadas y actividad de los últimos siete días; `ADMIN` ve datos globales y `USER` solo sus llamadas. El promedio usa duraciones válidas de llamadas completadas.
 - `/api/users` — listado, creación, edición y eliminación solo para `ADMIN`.
 - `/api/roles` — CRUD solo para `ADMIN`; los roles reservados `ADMIN` y `USER` no se pueden renombrar ni eliminar.
-- `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos.
+- `/api/contacts` — CRUD; `USER` solo ve y modifica sus contactos. La eliminación es lógica: `DELETE /api/contacts/:id` oculta el contacto y conserva sus datos y llamadas. Solo `ADMIN` puede consultar `GET /api/contacts?deleted=true` y restaurarlo con `POST /api/contacts/:id/restore`. El estado `inactive` es independiente de la eliminación; no se implementa anonimización.
 - `/api/calls` — CRUD; `USER` solo accede a llamadas asignadas a su cuenta.
 - `/api/recordings` — CRUD de metadatos; `USER` solo accede a grabaciones de sus llamadas.
 - Los listados CRUD admiten `?page=1&limit=10&search=texto` (límite: 10, 25 o 50); `search` aplica coincidencias parciales en los campos admitidos. Las respuestas paginadas incluyen `data`, `total`, `page`, `limit` y `totalPages`. Sin parámetros de paginación o búsqueda conservan la respuesta completa existente para mantener compatibilidad con otros consumidores de la API.

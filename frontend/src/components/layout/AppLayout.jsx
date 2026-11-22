@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Bell, BriefcaseBusiness, FileText, Headphones, LayoutDashboard, LogOut, Phone, PhoneCall, Search, Settings, ShieldCheck, Users, Volume2 } from 'lucide-react';
+import { BriefcaseBusiness, FileText, Headphones, LayoutDashboard, LogOut, Phone, PhoneCall, Settings, ShieldCheck, Users, Volume2 } from 'lucide-react';
 import api from '../../services/api';
+import { getActionErrorMessage } from '../../services/actionError';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { GlobalSearch } from './GlobalSearch';
+import { NotificationCenter } from './NotificationCenter';
 
 const navigation = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -20,6 +24,7 @@ const navigation = [
 
 export function AppLayout({ children }) {
   const logout = useAuthStore((state) => state.logout);
+  const notify = useToastStore((state) => state.notify);
   const user = useAuthStore((state) => state.user);
   const textSize = useUiPreferencesStore((state) => state.textSize);
   const [logoutError, setLogoutError] = useState('');
@@ -43,7 +48,9 @@ export function AppLayout({ children }) {
     try {
       await api.post('/auth/logout');
       logout();
+      notify('success', 'Sesión cerrada correctamente.');
     } catch (requestError) {
+      notify('error', getActionErrorMessage(requestError), { announce: false });
       setLogoutError(requestError.response?.data?.message || requestError.message || 'No se pudo cerrar la sesión.');
     } finally {
       setIsLoggingOut(false);
@@ -82,20 +89,15 @@ export function AppLayout({ children }) {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="relative flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/80 px-4 py-4 backdrop-blur sm:px-6 lg:flex-nowrap">
+        <header className="relative z-30 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/80 px-4 py-4 backdrop-blur sm:px-6 lg:flex-nowrap">
           <div>
             <p className="text-[10px] uppercase tracking-[0.32em] text-brand-300">Operaciones</p>
             <h2 className="text-lg font-semibold text-white">Centro de control</h2>
           </div>
 
           <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1 sm:justify-end sm:gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 sm:w-full sm:max-w-md">
-              <Search size={18} className="text-slate-400" />
-              <input className="w-full min-w-0 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" placeholder="Buscar en el sistema..." />
-            </div>
-            <button className="shrink-0 rounded-lg border border-slate-800 bg-slate-900 p-2.5 text-slate-300 hover:text-white">
-              <Bell size={18} />
-            </button>
+            <GlobalSearch />
+            <NotificationCenter key={user?.id} />
             <button
               onClick={handleLogout}
               disabled={isLoggingOut}
