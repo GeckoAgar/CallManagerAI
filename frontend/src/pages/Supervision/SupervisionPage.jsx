@@ -5,16 +5,34 @@ import api from '../../services/api';
 const refreshDelay = 30000;
 const numberFormatter = new Intl.NumberFormat('es-AR');
 
-const metricLabels = [
-  ['totalAgents', 'Agentes totales'],
-  ['availableAgents', 'Disponibles'],
-  ['busyAgents', 'Ocupados'],
-  ['offlineAgents', 'Desconectados'],
-  ['activeCalls', 'Llamadas activas'],
-  ['waitingCalls', 'En espera'],
-  ['monitoringCalls', 'En monitoreo'],
-  ['escalatedCalls', 'Escaladas'],
+const metricGroups = [
+  {
+    title: 'Agentes',
+    metrics: [
+      ['totalAgents', 'Agentes totales', 'neutral'],
+      ['availableAgents', 'Disponibles', 'positive'],
+      ['busyAgents', 'Ocupados', 'warning'],
+      ['offlineAgents', 'Desconectados', 'negative'],
+    ],
+  },
+  {
+    title: 'Llamadas y monitoreo',
+    metrics: [
+      ['activeCalls', 'Llamadas activas', 'brand'],
+      ['waitingCalls', 'En espera', 'warning'],
+      ['monitoringCalls', 'En monitoreo', 'positive'],
+      ['escalatedCalls', 'Escaladas', 'negative'],
+    ],
+  },
 ];
+
+const metricToneClasses = {
+  neutral: 'border-slate-600',
+  positive: 'border-emerald-500',
+  warning: 'border-amber-400',
+  negative: 'border-rose-500',
+  brand: 'border-brand-400',
+};
 
 function getErrorMessage(error) {
   return error.response?.data?.message || error.message || 'No se pudieron cargar los datos de supervisión.';
@@ -117,17 +135,23 @@ export function SupervisionPage() {
   }
 
   if (isLoading) {
-    return <div className="card p-6 text-center text-slate-300" role="status">Cargando supervisión...</div>;
+    return (
+      <div className="card flex items-center justify-center gap-3 p-8 text-slate-300" role="status">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-brand-300" aria-hidden="true" />
+        <span className="text-sm">Cargando supervisión...</span>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="card p-6 text-center">
-        <p className="text-sm text-rose-200" role="alert">{error}</p>
+      <div className="card flex flex-col items-center p-8 text-center sm:p-10">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300" aria-hidden="true">!</div>
+        <p className="max-w-xl text-sm leading-6 text-rose-200" role="alert">{error}</p>
         <button
           type="button"
           onClick={() => setRetryCount((count) => count + 1)}
-          className="mt-4 rounded-xl bg-brand-500 px-4 py-2 font-medium text-white hover:bg-brand-400"
+          className="mt-5 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
         >
           Reintentar
         </button>
@@ -135,67 +159,97 @@ export function SupervisionPage() {
     );
   }
 
-  const metrics = metricLabels.map(([key, label]) => ({
-    label,
-    value: numberFormatter.format(data.summary[key] ?? 0),
+  const formattedMetricGroups = metricGroups.map((group) => ({
+    ...group,
+    metrics: group.metrics.map(([key, label, tone]) => ({
+      label,
+      tone,
+      value: numberFormatter.format(data.summary[key] ?? 0),
+    })),
   }));
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="card p-5">
-            <p className="text-sm text-slate-400">{metric.label}</p>
-            <p className="mt-3 text-3xl font-bold text-white">{metric.value}</p>
-          </div>
-        ))}
-      </section>
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-300">Operaciones</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">Supervisión</h1>
+        </div>
+        <p className="rounded-md border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-slate-400">
+          Actualización automática cada 30 segundos
+        </p>
+      </div>
 
-      <section className="card p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white">Agentes</h3>
-          <span className="text-xs text-slate-400">Actualización automática cada 30 segundos</span>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+        {formattedMetricGroups.map((group) => (
+          <section key={group.title} className="card min-w-0 p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <h2 className="text-sm font-semibold text-white">{group.title}</h2>
+              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">Resumen</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {group.metrics.map((metric) => (
+                <div key={metric.label} className={`min-w-0 border-l-2 pl-3 ${metricToneClasses[metric.tone]}`}>
+                  <p className="text-xs leading-5 text-slate-400">{metric.label}</p>
+                  <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{metric.value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <section className="card min-w-0 overflow-hidden p-4 sm:p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Disponibilidad</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Agentes</h2>
+          </div>
+          <span className="text-xs text-slate-400">Estado y última actualización</span>
         </div>
         {data.agents.length ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
+            <table className="min-w-[680px] w-full text-left text-sm">
+              <thead className="bg-slate-950/70 text-[11px] uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Nombre</th>
-                  <th className="px-3 py-2 font-medium">Correo</th>
-                  <th className="px-3 py-2 font-medium">Estado</th>
-                  <th className="px-3 py-2 font-medium">Actualizado</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 font-semibold">Nombre</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 font-semibold">Correo</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 font-semibold">Estado</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 font-semibold">Actualizado</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-200">
+              <tbody className="text-slate-200">
                 {data.agents.map((agent) => (
-                  <tr key={agent.id}>
-                    <td className="whitespace-nowrap px-3 py-3">{agent.name}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{agent.email}</td>
-                    <td className="px-3 py-3"><StatusBadge status={agent.status} /></td>
-                    <td className="whitespace-nowrap px-3 py-3">{formatDateTime(agent.updatedAt)}</td>
+                  <tr key={agent.id} className="border-t border-slate-800/80 transition-colors hover:bg-slate-800/30">
+                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-white">{agent.name}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-400">{agent.email}</td>
+                    <td className="px-4 py-3.5"><StatusBadge status={agent.status} /></td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-xs tabular-nums text-slate-400">{formatDateTime(agent.updatedAt)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-400">
-            No hay agentes activos para supervisar.
-          </p>
+          <div className="rounded-lg border border-dashed border-slate-700 px-4 py-10 text-center">
+            <p className="font-medium text-slate-300">No hay agentes activos para supervisar.</p>
+          </div>
         )}
       </section>
 
-      <section className="card p-5">
-        <h3 className="mb-4 text-lg font-semibold text-white">Cola de supervisión</h3>
-        {actionError && <p className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200" role="alert">{actionError}</p>}
+      <section className="card min-w-0 p-4 sm:p-5">
+        <div className="mb-4 border-b border-slate-800 pb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Operaciones pendientes</p>
+          <h2 className="mt-1 text-lg font-semibold text-white">Cola de supervisión</h2>
+        </div>
+        {actionError && <p className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200" role="alert">{actionError}</p>}
         {data.queue.length ? (
           <div className="space-y-3">
             {data.queue.map((item) => (
-              <article key={item.id} className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <article key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition-colors hover:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="truncate font-medium text-white">{item.agentName || 'Sin agente asignado'}</p>
-                  <p className="mt-1 text-sm text-slate-400">
+                  <p className="mt-1 break-words text-sm text-slate-400">
                     Llamada {item.callId == null ? 'sin asociar' : `#${item.callId}`}
                     {item.phoneNumber ? ` · ${item.phoneNumber}` : ''}
                   </p>
@@ -208,7 +262,7 @@ export function SupervisionPage() {
                       type="button"
                       onClick={() => runQueueAction(item, 'monitoring')}
                       disabled={activeAction !== ''}
-                      className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-medium text-white hover:bg-cyan-600 disabled:opacity-50"
+                      className="min-h-10 rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {activeAction === `${item.id}:monitoring` ? 'Iniciando...' : 'Iniciar supervisión'}
                     </button>
@@ -218,7 +272,7 @@ export function SupervisionPage() {
                       type="button"
                       onClick={() => runQueueAction(item, 'escalate')}
                       disabled={activeAction !== ''}
-                      className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-medium text-white hover:bg-rose-600 disabled:opacity-50"
+                      className="min-h-10 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {activeAction === `${item.id}:escalate` ? 'Escalando...' : 'Escalar'}
                     </button>
@@ -227,7 +281,7 @@ export function SupervisionPage() {
                     type="button"
                     onClick={() => runQueueAction(item, 'remove')}
                     disabled={activeAction !== ''}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                    className="min-h-10 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-slate-500 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {activeAction === `${item.id}:remove` ? 'Retirando...' : 'Retirar de la cola'}
                   </button>
@@ -236,9 +290,9 @@ export function SupervisionPage() {
             ))}
           </div>
         ) : (
-          <p className="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-400">
-            La cola de supervisión está vacía.
-          </p>
+          <div className="rounded-lg border border-dashed border-slate-700 px-4 py-10 text-center">
+            <p className="font-medium text-slate-300">La cola de supervisión está vacía.</p>
+          </div>
         )}
       </section>
     </div>

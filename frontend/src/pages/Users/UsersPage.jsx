@@ -6,9 +6,9 @@ import { useAuthStore } from '../../store/authStore';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'name', label: 'Nombre' },
-  { key: 'email', label: 'Correo' },
-  { key: 'role_name', label: 'Rol' },
+  { key: 'name', label: 'Nombre', type: 'primary' },
+  { key: 'email', label: 'Correo', type: 'truncate' },
+  { key: 'role_name', label: 'Rol', type: 'role' },
   { key: 'status', label: 'Estado', type: 'status' },
   { key: 'created_at', label: 'Creado', type: 'date' },
 ];
@@ -69,6 +69,7 @@ export function UsersPage() {
       collection="users"
       columns={columns}
       fields={fields}
+      searchPlaceholder="Buscar por nombre o correo electrónico..."
       description="Los cambios de rol y estado se validan en el servidor. No se puede eliminar ni desactivar al último administrador activo."
     />
   );

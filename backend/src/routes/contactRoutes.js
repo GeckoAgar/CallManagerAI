@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
-const { authenticate } = require('../middlewares/auth');
+const { authenticate, requireRole } = require('../middlewares/auth');
 const { allowedStatuses, hasText, isPositiveId, optionalText, validEmail, validEnum } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 router.use(authenticate);
 
@@ -29,12 +30,53 @@ function validateContact(body, partial = false) {
 
 router.get('/', async (req, res, next) => {
   const filter = contactAccessFilter(req.user);
+  if (req.query.deleted !== undefined && req.query.deleted !== 'true') {
+    return res.status(400).json({ message: 'El parámetro deleted debe ser true.' });
+  }
+  const deleted = req.query.deleted === 'true';
+  if (deleted && req.user.roleName !== 'ADMIN') {
+    return res.status(403).json({ message: 'Solo ADMIN puede consultar contactos eliminados.' });
+  }
+  const deletionFilter = deleted ? 'c.deleted_at IS NOT NULL' : 'c.deleted_at IS NULL';
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' AND (c.name LIKE ? OR c.company LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const searchValues = requestedPagination.search
+        ? [searchPattern, searchPattern, searchPattern, searchPattern]
+        : [];
+      const queryValues = [...filter.values, ...searchValues];
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM contacts c
+         WHERE ${deletionFilter}${filter.clause}${searchClause}`,
+        queryValues
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [contacts] = await pool.query(
+        `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at, c.deleted_at,
+                u.name AS owner_name
+         FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
+         WHERE ${deletionFilter}${filter.clause}${searchClause}
+         ORDER BY c.id DESC
+         LIMIT ? OFFSET ?`,
+        [...queryValues, pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(contacts, pagination));
+    }
+
     const [contacts] = await pool.query(
-      `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at,
+      `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at, c.deleted_at,
               u.name AS owner_name
        FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
-       WHERE 1 = 1${filter.clause}
+       WHERE ${deletionFilter}${filter.clause}
        ORDER BY c.id DESC`,
       filter.values
     );
@@ -53,7 +95,7 @@ router.get('/:id', async (req, res, next) => {
       `SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.email, c.status, c.created_at,
               u.name AS owner_name
        FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
-       WHERE c.id = ?${filter.clause}`,
+       WHERE c.id = ? AND c.deleted_at IS NULL${filter.clause}`,
       [id, ...filter.values]
     );
     if (!rows.length) return res.status(404).json({ message: 'Contacto no encontrado.' });
@@ -120,7 +162,7 @@ router.patch('/:id', async (req, res, next) => {
 
   try {
     const [result] = await pool.query(
-      `UPDATE contacts SET ${assignments.join(', ')} WHERE id = ?${filter.clause}`,
+      `UPDATE contacts SET ${assignments.join(', ')} WHERE id = ? AND deleted_at IS NULL${filter.clause}`,
       [...values, id, ...filter.values]
     );
     if (!result.affectedRows) return res.status(404).json({ message: 'Contacto no encontrado.' });
@@ -142,11 +184,26 @@ router.delete('/:id', async (req, res, next) => {
   const filter = contactAccessFilter(req.user, '');
   try {
     const [result] = await pool.query(
-      `DELETE FROM contacts WHERE id = ?${filter.clause}`,
+      `UPDATE contacts SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL${filter.clause}`,
       [id, ...filter.values]
     );
     if (!result.affectedRows) return res.status(404).json({ message: 'Contacto no encontrado.' });
-    return res.json({ message: 'Contacto eliminado.' });
+    return res.json({ message: 'Contacto eliminado. Un administrador puede restaurarlo.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/restore', requireRole('ADMIN'), async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!isPositiveId(id)) return res.status(400).json({ message: 'Identificador de contacto inválido.' });
+  try {
+    const [result] = await pool.query(
+      'UPDATE contacts SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL',
+      [id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Contacto eliminado no encontrado.' });
+    return res.json({ message: 'Contacto restaurado.' });
   } catch (error) {
     return next(error);
   }

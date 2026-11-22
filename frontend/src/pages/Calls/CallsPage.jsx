@@ -3,18 +3,18 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'phone_number', label: 'Número' },
-  { key: 'direction', label: 'Dirección' },
-  { key: 'contact_name', label: 'Contacto' },
-  { key: 'agent_name', label: 'Asesor' },
-  { key: 'duration_seconds', label: 'Duración (s)' },
-  { key: 'score', label: 'Calificación' },
+  { key: 'phone_number', label: 'Número', type: 'monospace' },
+  { key: 'direction', label: 'Dirección', type: 'direction' },
+  { key: 'contact_name', label: 'Contacto', type: 'truncate' },
+  { key: 'agent_name', label: 'Asesor', type: 'truncate' },
+  { key: 'duration_seconds', label: 'Duración (s)', type: 'number' },
+  { key: 'score', label: 'Calificación', type: 'number' },
   { key: 'status', label: 'Estado', type: 'status' },
 ];
 
 const fields = [
   { name: 'phone_number', label: 'Número telefónico', required: true, maxLength: 30 },
-  { name: 'contact_id', label: 'Contacto', type: 'select', optional: true, optionsEndpoint: '/contacts', optionsCollection: 'contacts' },
+  { name: 'contact_id', label: 'Contacto', type: 'select', optional: true, optionsEndpoint: '/contacts', optionsCollection: 'contacts', currentLabelKey: 'contact_name' },
   { name: 'agent_id', label: 'Asesor', type: 'select', optional: true, adminOnly: true, optionsEndpoint: '/users', optionsCollection: 'users' },
   { name: 'direction', label: 'Dirección', type: 'select', required: true, defaultValue: 'inbound', options: [
     { id: 'inbound', name: 'Entrante' },
@@ -41,6 +41,7 @@ export function CallsPage() {
       collection="calls"
       columns={visibleColumns}
       fields={fields}
+      searchPlaceholder="Buscar por teléfono, contacto o agente..."
       description={isAdmin ? 'ADMIN puede gestionar las llamadas del equipo; las eliminaciones relacionadas se rechazan para preservar grabaciones y supervisión.' : 'Solo puedes gestionar las llamadas asignadas a tu cuenta.'}
     />
   );

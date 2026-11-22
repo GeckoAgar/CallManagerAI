@@ -3,13 +3,41 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { authenticate, requireRole } = require('../middlewares/auth');
 const { hasText, isPositiveId, optionalText } = require('../utils/resourceValidation');
+const { createPagination, paginatedResponse, parsePagination } = require('../utils/pagination');
 
 const reservedRoles = new Set(['ADMIN', 'USER']);
 
 router.use(authenticate, requireRole('ADMIN'));
 
 router.get('/', async (req, res, next) => {
+  const requestedPagination = parsePagination(req.query);
+  if (requestedPagination && requestedPagination.error) {
+    return res.status(400).json({ message: requestedPagination.error });
+  }
+
   try {
+    if (requestedPagination) {
+      const searchClause = requestedPagination.search
+        ? ' WHERE name LIKE ? OR description LIKE ?'
+        : '';
+      const searchPattern = `%${requestedPagination.search}%`;
+      const queryValues = requestedPagination.search ? [searchPattern, searchPattern] : [];
+      const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total FROM roles${searchClause}`,
+        queryValues
+      );
+      const pagination = createPagination(Number(countRow.total), requestedPagination.page, requestedPagination.limit);
+      const [roles] = await pool.query(
+        `SELECT id, name, description, created_at
+         FROM roles
+         ${searchClause}
+         ORDER BY id ASC
+         LIMIT ? OFFSET ?`,
+        [...queryValues, pagination.limit, pagination.offset]
+      );
+      return res.json(paginatedResponse(roles, pagination));
+    }
+
     const [roles] = await pool.query('SELECT id, name, description, created_at FROM roles ORDER BY id ASC');
     return res.json({ roles });
   } catch (error) {

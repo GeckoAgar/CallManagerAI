@@ -504,52 +504,65 @@ export function SoftphonePage() {
   const isOnCall = callState === 'connecting' || callState === 'active' || callState === 'incoming';
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_1.1fr]">
-      <section className="card p-6">
+    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+      <section className="card min-w-0 overflow-hidden p-4 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">Softphone</h2>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-300">Consola de comunicaciones</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Softphone</h2>
             <p className="mt-1 text-sm text-slate-400">Llamadas del navegador mediante Twilio Voice.</p>
           </div>
-          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${
+          <span role="status" aria-live="polite" className={`inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold sm:text-sm ${
             presence === 'available' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
               : presence === 'busy' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
                 : 'border-slate-700 bg-slate-800 text-slate-300'
           }`}>
-            {presence === 'offline' ? <WifiOff size={15} /> : <Wifi size={15} />}
+            {presence === 'offline' ? <WifiOff size={15} aria-hidden="true" /> : <Wifi size={15} aria-hidden="true" />}
             {presenceLabels[presence]}
           </span>
         </div>
 
-        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-          <p className="text-sm text-slate-400">Estado del dispositivo</p>
-          <p className="mt-1 flex items-center gap-2 font-medium text-white">
-            <span className={`h-2.5 w-2.5 rounded-full ${deviceReady ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-            {deviceReady ? 'Conectado a Twilio' : 'Desconectado'}
-          </p>
+        <section aria-label="Conexión del dispositivo" className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Conexión</p>
+              <p className="mt-1 text-sm font-medium text-slate-200">Estado del dispositivo</p>
+            </div>
+            <span className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+              isRegistering
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                : deviceReady
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  : 'border-slate-700 bg-slate-900 text-slate-300'
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${isRegistering ? 'animate-pulse bg-amber-400' : deviceReady ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+              {isRegistering ? 'Conectando...' : deviceReady ? 'Conectado a Twilio' : 'Desconectado'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={toggleAvailability}
             disabled={!deviceInitialized || isRegistering || isOnCall}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 font-medium text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isRegistering ? <RefreshCw size={17} className="animate-spin" /> : presence === 'offline' ? <Wifi size={17} /> : <WifiOff size={17} />}
+            {isRegistering ? <RefreshCw size={17} className="animate-spin" aria-hidden="true" /> : presence === 'offline' ? <Wifi size={17} aria-hidden="true" /> : <WifiOff size={17} aria-hidden="true" />}
             {isRegistering ? 'Conectando...' : presence === 'offline' ? 'Conectarme y quedar disponible' : 'Desconectarme'}
           </button>
-        </div>
+        </section>
 
-        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-5">
-          <div className="mb-4 text-center">
-            <p className="text-sm text-slate-400">Teléfono</p>
-            <p className="mt-2 min-h-8 text-xl font-semibold text-white">{number || 'Ingresa un número'}</p>
+        <section aria-label="Controles de llamada" className="mt-5 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5">
+          <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Teléfono seleccionado</p>
+            <p aria-live="polite" className="mt-2 min-h-8 break-all font-mono text-xl font-semibold tracking-wide text-white sm:text-2xl">{number || 'Ingresa un número'}</p>
           </div>
-          <div className="mx-auto grid max-w-xs grid-cols-3 gap-3">
+          <div className="mx-auto grid w-full max-w-xs grid-cols-3 gap-2.5 sm:gap-3">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map((digit) => (
               <button
                 key={digit}
                 type="button"
                 onClick={() => digit === '⌫' ? setNumber((current) => current.slice(0, -1)) : appendDigit(digit)}
-                className="rounded-xl border border-slate-800 bg-slate-900 py-3 text-lg font-medium text-slate-100 hover:bg-slate-800"
+                aria-label={digit === '⌫' ? 'Borrar último dígito' : `Agregar ${digit}`}
+                className="min-h-12 rounded-lg border border-slate-700/80 bg-slate-900 py-3 text-xl font-medium tabular-nums text-slate-100 transition-colors hover:border-brand-500/40 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 active:bg-slate-700"
               >
                 {digit}
               </button>
@@ -563,86 +576,111 @@ export function SoftphonePage() {
               placeholder="+5491123456789"
               value={number}
               onChange={(event) => setNumber(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-white placeholder:text-slate-500 focus:border-brand-400 focus:outline-none"
+              className="min-h-12 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 font-mono text-white placeholder:font-sans placeholder:text-slate-500 focus:border-brand-400 focus:outline-none"
             />
             <button
               type="submit"
               disabled={!deviceReady || presence !== 'available' || isOnCall}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Phone size={18} /> Llamar
+              <Phone size={18} aria-hidden="true" /> Llamar
             </button>
           </form>
 
           {isOnCall && (
-            <div className="mt-4 rounded-xl border border-brand-500/30 bg-brand-500/10 p-4">
-              <p className="text-center text-sm font-medium text-brand-100">{callLabel}</p>
-              <div className="mt-4 flex justify-center gap-3">
+            <div className="mt-5 rounded-xl border border-brand-500/30 bg-brand-500/10 p-4">
+              <div className="flex items-start gap-3">
+                <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${
+                  callState === 'active' ? 'bg-emerald-400' : callState === 'incoming' ? 'animate-pulse bg-brand-300' : 'animate-pulse bg-amber-400'
+                }`} />
+                <p aria-live="polite" className="text-sm font-semibold text-white">{callLabel}</p>
+              </div>
+              <div className="mt-4 flex flex-wrap justify-center gap-2 sm:gap-3">
                 {incomingCall ? (
                   <>
-                    <button type="button" onClick={answerCall} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500">
-                      <PhoneIncoming size={17} /> Atender
+                    <button type="button" onClick={answerCall} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">
+                      <PhoneIncoming size={17} aria-hidden="true" /> Atender
                     </button>
-                    <button type="button" onClick={rejectCall} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-500">
-                      <PhoneOff size={17} /> Rechazar
+                    <button type="button" onClick={rejectCall} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300">
+                      <PhoneOff size={17} aria-hidden="true" /> Rechazar
                     </button>
                   </>
                 ) : (
                   <>
-                    <button type="button" onClick={toggleMute} disabled={callState !== 'active'} className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-4 py-2.5 text-sm text-white hover:bg-slate-800 disabled:opacity-50">
-                      {muted ? <MicOff size={17} /> : <Mic size={17} />} {muted ? 'Activar micrófono' : 'Silenciar'}
+                    <button type="button" onClick={toggleMute} disabled={callState !== 'active'} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 disabled:cursor-not-allowed disabled:opacity-50">
+                      {muted ? <MicOff size={17} aria-hidden="true" /> : <Mic size={17} aria-hidden="true" />} {muted ? 'Activar micrófono' : 'Silenciar'}
                     </button>
-                    <button type="button" onClick={hangUp} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-500">
-                      <PhoneOff size={17} /> Colgar
+                    <button type="button" onClick={hangUp} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300">
+                      <PhoneOff size={17} aria-hidden="true" /> Colgar
                     </button>
                   </>
                 )}
               </div>
             </div>
           )}
-        </div>
+        </section>
 
-        {error && <p role="alert" className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm leading-5 text-rose-200">{error}</p>}
       </section>
 
-      <section className="card p-6">
-        <div className="mb-5 flex items-center justify-between gap-3">
+      <section className="card min-w-0 overflow-hidden p-4 sm:p-6">
+        <div className="mb-5 flex items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-300">Actividad reciente</p>
             <h2 className="text-xl font-semibold text-white">Historial reciente</h2>
             <p className="mt-1 text-sm text-slate-400">Se actualiza automáticamente cada 15 segundos.</p>
           </div>
-          <button type="button" onClick={loadCalls} aria-label="Actualizar historial" className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800">
-            <RefreshCw size={17} />
+          <button type="button" onClick={loadCalls} aria-label="Actualizar historial" title="Actualizar historial" className="shrink-0 rounded-lg border border-slate-700 p-2 text-slate-300 transition-colors hover:border-brand-500/40 hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300">
+            <RefreshCw size={17} aria-hidden="true" />
           </button>
         </div>
 
         {isLoading ? (
-          <p className="py-10 text-center text-sm text-slate-400">Cargando historial...</p>
+          <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-400" role="status">
+            <RefreshCw size={17} className="animate-spin text-brand-300" aria-hidden="true" />
+            <span>Cargando historial...</span>
+          </div>
         ) : calls.length ? (
           <div className="space-y-3">
             {calls.map((call) => (
-              <article key={call.id} className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <article
+                key={call.id}
+                className={`flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-slate-800 border-l-2 bg-slate-950/60 p-3 transition-colors hover:bg-slate-900/80 sm:flex-row sm:items-center sm:gap-4 sm:p-4 ${
+                  call.status === 'completed' ? 'border-l-emerald-500'
+                    : call.status === 'failed' ? 'border-l-rose-500'
+                      : call.status === 'queued' ? 'border-l-amber-400'
+                        : call.status === 'active' ? 'border-l-brand-400' : 'border-l-slate-600'
+                }`}
+              >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className={`rounded-lg p-2 ${call.direction === 'inbound' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-brand-500/10 text-brand-300'}`}>
-                    {call.direction === 'inbound' ? <PhoneIncoming size={18} /> : <PhoneCall size={18} />}
+                  <span className={`shrink-0 rounded-md p-2 ${call.direction === 'inbound' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-brand-500/10 text-brand-300'}`}>
+                    {call.direction === 'inbound' ? <PhoneIncoming size={18} aria-hidden="true" /> : <PhoneCall size={18} aria-hidden="true" />}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-medium text-white">{call.phone_number || 'Sin número'}</p>
                     <p className="mt-1 text-xs text-slate-400">{new Date(call.created_at).toLocaleString()}</p>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <p className={`inline-flex items-center gap-1 text-sm ${call.status === 'completed' ? 'text-emerald-300' : 'text-slate-300'}`}>
-                    {call.status === 'completed' && <Check size={14} />}
+                <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end sm:gap-1">
+                  <p className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${
+                    call.status === 'completed' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : call.status === 'failed' ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                        : call.status === 'queued' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                          : 'border-slate-600 bg-slate-800 text-slate-200'
+                  }`}>
+                    {call.status === 'completed' && <Check size={14} aria-hidden="true" />}
                     {callStatusLabels[call.status] || call.status}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">{call.duration_seconds || 0} s</p>
+                  <p className="text-xs tabular-nums text-slate-500">{call.duration_seconds || 0} s</p>
                 </div>
               </article>
             ))}
           </div>
         ) : (
-          <p className="rounded-xl border border-dashed border-slate-700 py-12 text-center text-sm text-slate-400">Todavía no hay llamadas registradas.</p>
+          <div className="rounded-lg border border-dashed border-slate-700 px-4 py-12 text-center">
+            <p className="font-medium text-slate-300">Todavía no hay llamadas registradas.</p>
+            <p className="mt-1 text-sm text-slate-500">Las llamadas recientes aparecerán aquí.</p>
+          </div>
         )}
       </section>
     </div>

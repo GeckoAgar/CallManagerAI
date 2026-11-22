@@ -2,11 +2,11 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'file_name', label: 'Archivo' },
-  { key: 'phone_number', label: 'Número de llamada' },
-  { key: 'duration_seconds', label: 'Duración (s)' },
-  { key: 'url', label: 'URL' },
-  { key: 'transcription', label: 'Transcripción' },
+  { key: 'file_name', label: 'Archivo', type: 'primary' },
+  { key: 'phone_number', label: 'Número de llamada', type: 'monospace' },
+  { key: 'duration_seconds', label: 'Duración (s)', type: 'number' },
+  { key: 'url', label: 'URL', type: 'truncate' },
+  { key: 'transcription', label: 'Transcripción', type: 'truncate' },
 ];
 
 const fields = [
@@ -25,6 +25,7 @@ export function RecordingsPage() {
       collection="recordings"
       columns={columns}
       fields={fields}
+      searchPlaceholder="Buscar por archivo o transcripción..."
       description="Este módulo administra los metadatos y URL de grabaciones; la carga y almacenamiento de archivos de audio todavía no está implementada."
     />
   );

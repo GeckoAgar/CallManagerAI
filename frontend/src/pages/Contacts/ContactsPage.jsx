@@ -1,13 +1,15 @@
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'name', label: 'Nombre' },
-  { key: 'company', label: 'Empresa' },
-  { key: 'phone', label: 'Teléfono' },
-  { key: 'email', label: 'Correo' },
-  { key: 'owner_name', label: 'Propietario' },
+  { key: 'name', label: 'Nombre', type: 'primary' },
+  { key: 'company', label: 'Empresa', type: 'truncate' },
+  { key: 'phone', label: 'Teléfono', type: 'monospace' },
+  { key: 'email', label: 'Correo', type: 'truncate' },
+  { key: 'owner_name', label: 'Propietario', type: 'truncate' },
   { key: 'status', label: 'Estado', type: 'status' },
 ];
 
@@ -24,17 +26,40 @@ const fields = [
 ];
 
 export function ContactsPage() {
+  const location = useLocation();
   const isAdmin = useAuthStore((state) => state.user?.roleName === 'ADMIN');
+  const [showDeleted, setShowDeleted] = useState(false);
+  const viewingDeleted = isAdmin && showDeleted;
   const visibleColumns = isAdmin ? columns : columns.filter((column) => column.key !== 'owner_name');
 
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('highlight')) setShowDeleted(false);
+  }, [location.key, location.search]);
+
   return (
-    <CrudManager
-      title="Contactos"
-      resource="/contacts"
-      collection="contacts"
-      columns={visibleColumns}
-      fields={fields}
-      description={isAdmin ? 'ADMIN puede gestionar todos los contactos y asignar un propietario; USER solo administra sus contactos.' : 'Los contactos que crees quedan asociados a tu cuenta.'}
-    />
+    <div className="space-y-4">
+      {isAdmin && (
+        <div className="flex flex-wrap gap-2" aria-label="Vista de contactos">
+          <button type="button" onClick={() => setShowDeleted(false)} aria-pressed={!viewingDeleted} className={`rounded-lg border px-4 py-2 text-sm ${!viewingDeleted ? 'border-brand-500 bg-brand-500/15 text-brand-200' : 'border-slate-700 text-slate-300'}`}>
+            Contactos
+          </button>
+          <button type="button" onClick={() => setShowDeleted(true)} aria-pressed={viewingDeleted} className={`rounded-lg border px-4 py-2 text-sm ${viewingDeleted ? 'border-brand-500 bg-brand-500/15 text-brand-200' : 'border-slate-700 text-slate-300'}`}>
+            Contactos eliminados
+          </button>
+        </div>
+      )}
+      <CrudManager
+        key={viewingDeleted ? 'deleted' : 'current'}
+        title={viewingDeleted ? 'Contactos eliminados' : 'Contactos'}
+        resource="/contacts"
+        collection="contacts"
+        columns={viewingDeleted ? [...visibleColumns, { key: 'deleted_at', label: 'Eliminado', type: 'date' }] : visibleColumns}
+        fields={fields}
+        softDelete
+        showDeleted={viewingDeleted}
+        searchPlaceholder="Buscar por nombre, empresa, teléfono o correo..."
+        description={viewingDeleted ? 'Solo ADMIN puede consultar y restaurar contactos eliminados. Sus llamadas y datos se conservan.' : isAdmin ? 'ADMIN puede gestionar todos los contactos y asignar un propietario; USER solo administra sus contactos.' : 'Los contactos que crees quedan asociados a tu cuenta.'}
+      />
+    </div>
   );
 }

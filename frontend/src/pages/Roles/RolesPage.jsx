@@ -2,8 +2,8 @@ import { CrudManager } from '../../components/common/CrudManager';
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'name', label: 'Nombre' },
-  { key: 'description', label: 'Descripción' },
+  { key: 'name', label: 'Rol', type: 'role' },
+  { key: 'description', label: 'Descripción', type: 'truncate' },
 ];
 
 const fields = [
@@ -19,6 +19,7 @@ export function RolesPage() {
       collection="roles"
       columns={columns}
       fields={fields}
+      searchPlaceholder="Buscar por nombre o descripción..."
       description="ADMIN y USER son roles del sistema: no se pueden renombrar ni eliminar. Los roles asignados no se pueden borrar."
     />
   );
