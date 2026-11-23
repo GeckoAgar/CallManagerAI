@@ -49,6 +49,24 @@ function callStatusCallbackUrl(config) {
   return `${config.webhookBaseUrl.replace(/\/$/, '')}/api/softphone/webhooks/dial-status`;
 }
 
+async function findCallByProviderSid(connection, reqBody) {
+  const candidates = [
+    reqBody.ParentCallSid,
+    reqBody.CallSid,
+    reqBody.DialCallSid,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const uniqueCandidates = [...new Set(candidates)];
+  if (!uniqueCandidates.length) return null;
+
+  const [calls] = await connection.query(
+    `SELECT id, agent_id, agent_device_session_id, status FROM calls
+     WHERE provider_call_sid IN (${uniqueCandidates.map(() => '?').join(', ')})
+     FOR UPDATE`,
+    uniqueCandidates
+  );
+  return calls[0] || null;
+}
+
 async function insertCallOnce(connection, { callSid, agentId, deviceSessionId = null, phoneNumber, direction }) {
   try {
     const [result] = await connection.query(
@@ -64,25 +82,39 @@ async function insertCallOnce(connection, { callSid, agentId, deviceSessionId = 
   }
 }
 
-async function saveOutboundCall({ callSid, agentId, deviceSessionId, phoneNumber }) {
-  return runInTransaction((connection) => insertCallOnce(connection, {
-    callSid,
-    agentId,
-    deviceSessionId,
-    phoneNumber,
-    direction: 'outbound',
-  }));
-}
+async function reserveOutboundCall({ callSid, agentId, deviceSessionId, phoneNumber }) {
+  return runInTransaction(async (connection) => {
+    const [agents] = await connection.query(
+      `SELECT user_id
+       FROM agent_presence
+       WHERE user_id = ? AND device_session_id = ? AND status = 'available'
+         AND updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
+       FOR UPDATE`,
+      [agentId, deviceSessionId]
+    );
+    if (!agents.length) return { state: 'unavailable' };
 
-async function isRegisteredAndAvailable(agentId, deviceSessionId) {
-  const [rows] = await pool.query(
-    `SELECT user_id
-     FROM agent_presence
-     WHERE user_id = ? AND device_session_id = ? AND status = 'available'
-       AND updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)`,
-    [agentId, deviceSessionId]
-  );
-  return rows.length > 0;
+    const inserted = await insertCallOnce(connection, {
+      callSid,
+      agentId,
+      deviceSessionId,
+      phoneNumber,
+      direction: 'outbound',
+    });
+    if (!inserted.created) return { state: 'duplicate' };
+
+    const [presenceResult] = await connection.query(
+      `UPDATE agent_presence
+       SET status = 'busy', updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND device_session_id = ? AND status = 'available'`,
+      [agentId, deviceSessionId]
+    );
+    if (presenceResult.affectedRows !== 1) {
+      throw new Error('Unable to reserve the agent for the outbound call.');
+    }
+
+    return { state: 'reserved' };
+  });
 }
 
 async function reserveInboundCall({ callSid, phoneNumber }) {
@@ -186,14 +218,18 @@ router.post('/webhooks/voice', async (req, res, next) => {
       }
 
       const agentId = Number(identityMatch[1]);
-      if (!(await isRegisteredAndAvailable(agentId, deviceSessionId))) {
+      const reservation = await reserveOutboundCall({
+        callSid,
+        agentId,
+        deviceSessionId,
+        phoneNumber: to,
+      });
+      if (reservation.state === 'unavailable') {
         voiceResponse.say('The calling device is not registered or available.');
         voiceResponse.hangup();
         return sendVoiceResponse(res, voiceResponse);
       }
-
-      const savedCall = await saveOutboundCall({ callSid, agentId, deviceSessionId, phoneNumber: to });
-      if (!savedCall.created) {
+      if (reservation.state === 'duplicate') {
         voiceResponse.hangup();
         return sendVoiceResponse(res, voiceResponse);
       }
@@ -267,13 +303,8 @@ router.post('/webhooks/dial-status', async (req, res, next) => {
         const status = active ? 'active' : completed ? 'completed' : 'failed';
         const childDuration = Number(req.body.CallDuration);
         const call = await runInTransaction(async (connection) => {
-          const [calls] = await connection.query(
-            `SELECT id, agent_id, agent_device_session_id, status FROM calls
-             WHERE provider_call_sid = ? FOR UPDATE`,
-            [parentCallSid]
-          );
-          if (!calls.length) return null;
-          const previousCall = calls[0];
+          const previousCall = await findCallByProviderSid(connection, req.body);
+          if (!previousCall) return null;
           await connection.query(
             `UPDATE calls SET status = ?,
                duration_seconds = CASE WHEN ? = 'completed' AND ? >= 0 THEN ? ELSE duration_seconds END
@@ -310,13 +341,8 @@ router.post('/webhooks/dial-status', async (req, res, next) => {
     if (callSid) {
       const status = result === 'completed' ? 'completed' : 'failed';
       const call = await runInTransaction(async (connection) => {
-        const [calls] = await connection.query(
-          `SELECT id, agent_id, agent_device_session_id, status FROM calls
-           WHERE provider_call_sid = ? FOR UPDATE`,
-          [callSid]
-        );
-        if (!calls.length) return null;
-        const previousCall = calls[0];
+        const previousCall = await findCallByProviderSid(connection, req.body);
+        if (!previousCall) return null;
         await connection.query(
           `UPDATE calls SET status = ?, duration_seconds = ?
            WHERE id = ?`,
@@ -347,6 +373,59 @@ router.post('/webhooks/dial-status', async (req, res, next) => {
 });
 
 router.use(authenticate);
+
+router.patch('/calls/:providerCallSid/status', async (req, res, next) => {
+  const providerCallSid = String(req.params.providerCallSid || '').trim();
+  const status = req.body?.status;
+  const duration = Number(req.body?.durationSeconds);
+
+  if (!/^CA[\da-z]+$/i.test(providerCallSid)) {
+    return res.status(400).json({ message: 'Identificador de llamada inválido.' });
+  }
+  if (!['completed', 'failed'].includes(status)) {
+    return res.status(400).json({ message: 'Estado de llamada inválido.' });
+  }
+  if (!Number.isFinite(duration) || duration < 0) {
+    return res.status(400).json({ message: 'Duración de llamada inválida.' });
+  }
+
+  try {
+    const call = await runInTransaction(async (connection) => {
+      const [calls] = await connection.query(
+        `SELECT id, status, agent_id, agent_device_session_id
+         FROM calls
+         WHERE provider_call_sid = ? AND agent_id = ?
+         FOR UPDATE`,
+        [providerCallSid, req.user.id]
+      );
+      if (!calls.length) return null;
+
+      const previousCall = calls[0];
+      await connection.query(
+        'UPDATE calls SET status = ?, duration_seconds = ? WHERE id = ?',
+        [status, Math.trunc(duration), previousCall.id]
+      );
+      await syncSurveillanceQueueForCall(connection, {
+        callId: previousCall.id,
+        previousStatus: previousCall.status,
+        previousAgentId: previousCall.agent_id,
+        status,
+        agentId: previousCall.agent_id,
+      });
+      return previousCall;
+    });
+
+    if (!call) return res.status(404).json({ message: 'Llamada no encontrada.' });
+    await pool.query(
+      `UPDATE agent_presence SET status = 'available', updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND device_session_id = ?`,
+      [call.agent_id, call.agent_device_session_id]
+    );
+    return res.json({ call: { id: call.id, status, durationSeconds: Math.trunc(duration) } });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 router.get('/token', (req, res) => {
   const config = getTwilioConfig();

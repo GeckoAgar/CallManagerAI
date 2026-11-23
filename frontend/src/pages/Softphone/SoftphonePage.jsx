@@ -98,23 +98,41 @@ export function SoftphonePage() {
 
   const bindCallEvents = useCallback((call, isIncoming = false) => {
     callRef.current = call;
+    const startedAt = Date.now();
+    let wasAnswered = false;
     setIncomingCall(isIncoming);
     setCallState(isIncoming ? 'incoming' : 'connecting');
     setCallLabel(isIncoming ? `Llamada entrante de ${call.parameters.From || 'número desconocido'}` : 'Conectando llamada...');
     call.on('accept', () => {
+      wasAnswered = true;
       setIncomingCall(false);
       setCallState('active');
       setCallLabel('Llamada en curso');
-      changePresence('busy').catch((requestError) => setError(getErrorMessage(requestError)));
     });
-    call.on('disconnect', finishCall);
+    call.on('disconnect', async () => {
+      const providerCallSid = call.sid || call.parameters?.CallSid || call.parameters?.callSid;
+      if (providerCallSid) {
+        try {
+          await api.patch(
+            `/softphone/calls/${encodeURIComponent(providerCallSid)}/status`,
+            {
+              status: wasAnswered ? 'completed' : 'failed',
+              durationSeconds: wasAnswered ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : 0,
+            }
+          );
+        } catch (requestError) {
+          setError(getErrorMessage(requestError));
+        }
+      }
+      await finishCall();
+    });
     call.on('cancel', finishCall);
     call.on('reject', finishCall);
     call.on('error', (callError) => {
       setError(getErrorMessage(callError));
       finishCall();
     });
-  }, [changePresence, finishCall]);
+  }, [finishCall]);
 
   useEffect(() => {
     let active = true;
@@ -272,7 +290,6 @@ export function SoftphonePage() {
         device.on('incoming', (call) => {
           if (!active) return;
           bindCallEvents(call, true);
-          changePresence('busy').catch((requestError) => setError(getErrorMessage(requestError)));
         });
         device.on('tokenWillExpire', async () => {
           try {
