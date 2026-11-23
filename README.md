@@ -1,6 +1,6 @@
 # CallManagerAI
 
-Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utiliza React y Vite en el frontend, Node.js y Express en la API, MySQL como base de datos y Twilio Voice para el softphone.
+Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utiliza React y Vite en el frontend, Node.js y Express en la API y MySQL como base de datos. El softphone admite llamadas salientes con Telnyx.
 
 ## Información académica
 
@@ -18,10 +18,10 @@ Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utili
 - Avisos Toast para resultados de los CRUD y acciones de sesión, con indicadores de carga y errores en pantalla.
 - Buscador global con resultados paginados y filtrados por los permisos existentes.
 - Centro de notificaciones por usuario persistido en MySQL para eventos seleccionados.
-- Softphone de navegador integrado con Twilio Voice: llamadas salientes y entrantes, estado de agente, atender, rechazar, silenciar, colgar e historial.
+- Softphone de navegador: llamadas salientes con Telnyx, estado de agente, silenciar, colgar e historial reciente con actualización manual y automática cada 15 segundos.
 - Paneles de reportes y supervisión.
 
-Las llamadas reales requieren una cuenta de Twilio configurada y una URL HTTPS pública para recibir sus webhooks. En el entorno de desarrollo se comprobó una llamada saliente real y el teléfono de destino sonó. Esta prueba no demuestra por sí sola que las llamadas entrantes estén verificadas en un entorno real; configúralas y pruébalas por separado.
+Las llamadas reales requieren una cuenta de Telnyx y una URL HTTPS pública para recibir webhooks. Las llamadas entrantes no están implementadas.
 
 ### Filtro de período en el Dashboard
 
@@ -56,8 +56,8 @@ Las pruebas con una base temporal aislada se ejecutan desde la raíz con `node -
 - Node.js y npm.
 - MySQL Server.
 - MySQL Workbench para ejecutar o revisar los scripts SQL.
-- Cuenta de Twilio con Voice habilitado para usar el softphone.
-- ngrok u otro túnel HTTPS para que Twilio pueda acceder al backend durante el desarrollo local.
+- Cuenta de Telnyx con voz habilitada para usar el softphone.
+- ngrok u otro túnel HTTPS para que el proveedor pueda acceder al backend durante el desarrollo local.
 
 ## Configuración de la base de datos
 
@@ -82,7 +82,7 @@ Las pruebas con una base temporal aislada se ejecutan desde la raíz con `node -
 
 1. Realiza y verifica una copia de seguridad antes de modificar la base.
 2. En MySQL Workbench, selecciona la base `callmanagerai`. No la elimines ni ejecutes `schema.sql` como sustituto de una actualización: el esquema crea tablas que faltan, pero no actualiza la definición de las tablas existentes.
-3. La carpeta de migraciones contiene las versiones 002 a 008; no hay un archivo 001. Revisa la estructura actual y ejecuta **solo las migraciones pendientes**, en este orden:
+3. La carpeta de migraciones contiene las versiones 002 a 009; no hay un archivo 001. Revisa la estructura actual y ejecuta **solo las migraciones pendientes**, en este orden:
 
    1. `backend/database/migrations/002_contact_owner.sql` — agrega `contacts.owner_id` y su clave foránea a `users`. Los contactos existentes quedan con propietario `NULL`. Requiere que existan las tablas `contacts` y `users`.
    2. `backend/database/migrations/003_softphone.sql` — agrega `calls.provider_call_sid` con índice único y crea `agent_presence`. Requiere que existan `calls` y `users`. **No es idempotente**: no la ejecutes si la columna o el índice ya están creados; si hubo una ejecución parcial, inspecciona el estado antes de continuar.
@@ -91,6 +91,7 @@ Las pruebas con una base temporal aislada se ejecutan desde la raíz con `node -
    5. `backend/database/migrations/006_auth_token_version.sql` — agrega `users.token_version`, con valor inicial `0`. Requiere que exista `users`.
    6. `backend/database/migrations/007_contact_soft_delete.sql` — agrega `contacts.deleted_at` para la baja lógica; los contactos existentes quedan visibles. Requiere que exista `contacts`.
    7. `backend/database/migrations/008_notifications.sql` — crea `notifications` vinculada a `users` para el historial personal. No modifica filas existentes; al eliminar un usuario se eliminan sus notificaciones. Requiere `users`. Si la tabla ya existe, comprueba su definición antes de continuar.
+   8. `backend/database/migrations/009_telnyx_outbound.sql` — crea la tabla de control de llamadas salientes de Telnyx. Requiere la tabla `calls`; si la tabla ya existe, comprueba su definición antes de continuar.
 
    Las migraciones 002, 004, 005, 006 y 007 comprueban la existencia de las columnas, la relación o el índice que administran antes de agregarlos. Aun así, verifica que la estructura existente tenga la definición esperada; las comprobaciones se basan en nombres de columnas e índices.
 4. Si falta alguna tabla requerida, hay una ejecución parcial o el esquema difiere de lo esperado, detente y revisa la base antes de continuar. No ejecutes una migración ya aplicada: la 003 no tolera una repetición y las demás no sustituyen una inspección de la estructura.
@@ -110,44 +111,27 @@ Configura en `.env` las credenciales de MySQL (`DB_HOST`, `DB_PORT`, `DB_NAME`, 
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-No uses los valores de ejemplo en un entorno real. **No subas ni compartas `.env`**: contiene credenciales de la base y secretos de Twilio. `.gitignore` excluye este archivo del repositorio.
+No uses los valores de ejemplo en un entorno real. **No subas ni compartas `.env`**: contiene credenciales de la base y secretos de telefonía. `.gitignore` excluye este archivo del repositorio.
+
+## Configurar Telnyx para llamadas salientes
+
+Telnyx es el proveedor del softphone. Las llamadas entrantes aún no están implementadas.
+
+1. Aplica la migración 009 en la base existente y realiza una copia de seguridad antes de modificarla.
+2. En `.env`, configura `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, `TELNYX_CONNECTION_ID`, `TELNYX_PHONE_NUMBER` y `TELNYX_WEBHOOK_BASE_URL`. El número debe estar en formato internacional E.164. La URL debe ser únicamente el origen HTTPS público, sin ruta.
+3. En la conexión SIP de Telnyx, configura **Call Parking** para llamadas salientes, webhook versión **2**, y la URL `https://<dominio-publico>/api/softphone/telnyx/webhook`. Vincula la conexión a un perfil saliente que habilite los destinos necesarios. Cambiar Call Parking puede afectar la demostración WebRTC que funcionaba sin esta configuración.
+4. Reinicia el backend y frontend. Al conectarse, cada dispositivo recibe una credencial temporal independiente; las credenciales creadas vencen después de una hora.
+5. Antes de probar una llamada real, revisa el saldo y la tarifa del destino.
+
+El backend verifica la firma de los webhooks y comprueba la configuración de Call Parking antes de emitir credenciales o reservar una llamada. No desactives Call Parking mientras haya dispositivos conectados: podrían conservar credenciales vigentes. Las llamadas rechazadas o no completadas pueden tener cargos según las condiciones del proveedor.
+
+Para validar con Telnyx simulado y MySQL: `node --test backend\test\telnyxOutbound.test.js`. La prueba crea y elimina una base temporal, y no llama a la API real de Telnyx.
 
 También puedes ajustar estas variables incluidas en `.env.example`:
 
 - `PORT`: puerto de la API; el valor de ejemplo y el valor predeterminado del backend son `4000`.
 - `JWT_EXPIRES_IN`: duración de los JWT; el valor de ejemplo y el predeterminado son `8h`.
 - `FRONTEND_URL`: origen permitido para el frontend por CORS; el valor de ejemplo y el predeterminado son `http://localhost:5173`.
-
-## Configurar Twilio para el softphone
-
-En `.env`, completa las variables del servidor:
-
-```env
-TWILIO_ACCOUNT_SID=
-TWILIO_API_KEY_SID=
-TWILIO_API_KEY_SECRET=
-TWILIO_TWIML_APP_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_PHONE_NUMBER=
-TWILIO_WEBHOOK_BASE_URL=
-```
-
-- Crea una API Key **Standard** y una TwiML App desde Twilio Console.
-- `TWILIO_PHONE_NUMBER` es el número Twilio habilitado para voz, en formato internacional E.164, por ejemplo `+549...`.
-- `TWILIO_WEBHOOK_BASE_URL` es solamente el origen HTTPS público, sin ruta ni barra final, por ejemplo `https://tu-dominio.ngrok-free.dev`.
-- Mantén privados `TWILIO_API_KEY_SECRET` y `TWILIO_AUTH_TOKEN`; solo se utilizan en el backend.
-
-Para desarrollo local:
-
-1. Inicia la aplicación como se describe en **Instalación y ejecución**.
-2. Abre otra terminal y ejecuta `ngrok http 4000`. Mantén esa terminal abierta.
-3. Copia el dominio HTTPS que ngrok muestra como `Forwarding` y úsalo en `TWILIO_WEBHOOK_BASE_URL`.
-4. En la TwiML App de Twilio y en la configuración de voz del número, configura la Voice URL `https://<dominio-publico>/api/softphone/webhooks/voice` con método **HTTP POST**.
-5. Si cambias `.env`, reinicia el backend para que cargue los nuevos valores.
-
-La firma de los webhooks se valida con el Auth Token de Twilio. El navegador debe permitir el micrófono; `localhost` y el dominio HTTPS son contextos seguros. Las cuentas Twilio de prueba pueden limitar las llamadas salientes a números verificados.
-
-En CallManagerAI, inicia sesión, abre **Softphone**, concede acceso al micrófono y selecciona **Conectarme y quedar disponible**.
 
 ## Instalación y ejecución
 
@@ -195,7 +179,7 @@ Si no necesitas conservar usuarios, llamadas u otros datos, puedes omitir la exp
 
 ### 2. Instalar el proyecto en la PC nueva
 
-1. Instala Node.js (versión LTS), MySQL Server, MySQL Workbench y Git. Para usar llamadas con Twilio en desarrollo, instala también ngrok.
+1. Instala Node.js (versión LTS), MySQL Server, MySQL Workbench y Git. Para usar llamadas con Telnyx en desarrollo, instala también ngrok.
 2. Abre PowerShell en la carpeta donde quieras guardar el proyecto y clona el repositorio:
 
    ```powershell
@@ -228,9 +212,9 @@ Si el respaldo corresponde al esquema actual de CallManagerAI, no vuelvas a ejec
 2. Edita `.env` y configura las credenciales de MySQL de la PC nueva (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`). El nombre de la base debe coincidir con la restaurada o creada.
 3. Genera un `JWT_SECRET` nuevo con el comando indicado en **Variables de entorno**.
 4. `.env` no se guarda en GitHub. Configúralo en la nueva PC; no publiques el archivo ni pegues sus secretos en chats o repositorios.
-5. Para usar Twilio, configura en `.env` las credenciales de tu cuenta y el número habilitado para voz. Puedes reutilizar la misma cuenta si tienes acceso, pero conserva las credenciales de forma privada. Para una instalación sin llamadas, puedes dejar Twilio sin configurar.
+5. Para usar Telnyx, configura en `.env` las credenciales y el número habilitado para voz como se indica en **Configurar Telnyx para llamadas salientes**. Para una instalación sin llamadas, puedes dejar Telnyx sin configurar.
 
-### 4. Configurar ngrok y Twilio (opcional)
+### 4. Configurar ngrok y Telnyx (opcional)
 
 1. Inicia la aplicación desde la raíz del proyecto con `npm run dev` y deja esa terminal abierta.
 2. Inicia sesión en ngrok en esa PC y configura tu authtoken siguiendo las instrucciones de tu cuenta. En otra terminal, ejecuta:
@@ -239,15 +223,14 @@ Si el respaldo corresponde al esquema actual de CallManagerAI, no vuelvas a ejec
    ngrok http 4000
    ```
 
-3. Copia el nuevo dominio HTTPS de ngrok en `TWILIO_WEBHOOK_BASE_URL` (sin ruta y sin barra final). Reinicia el backend después de cambiar `.env`.
-4. En Twilio Console, actualiza la Voice URL de la TwiML App y del número para usar el dominio nuevo:
-   `https://<dominio-ngrok>/api/softphone/webhooks/voice`
-   con método **HTTP POST**.
-5. Mantén ngrok activo mientras uses llamadas. En el plan gratuito, el dominio puede cambiar al reiniciar el túnel; si cambia, actualiza `.env` y las URLs en Twilio.
+3. Copia el nuevo dominio HTTPS de ngrok en `TELNYX_WEBHOOK_BASE_URL` (sin ruta y sin barra final). Reinicia el backend después de cambiar `.env`.
+4. En el portal de Telnyx, actualiza la URL del webhook de la conexión:
+   `https://<dominio-ngrok>/api/softphone/telnyx/webhook`
+5. Mantén ngrok activo mientras uses llamadas. En el plan gratuito, el dominio puede cambiar al reiniciar el túnel; si cambia, actualiza `.env` y la URL del webhook en Telnyx.
 
 ### 5. Comprobar la instalación
 
-Si no configuraste Twilio en el paso anterior, inicia la aplicación desde la raíz con `npm run dev`. Abre la dirección **Local** que indique Vite en la terminal. La API debe iniciar sin errores de conexión a MySQL. Prueba iniciar sesión con un usuario existente si restauraste la base. Si creaste una base vacía, crea el admigitnistrador inicial una sola vez:
+Si no configuraste Telnyx en el paso anterior, inicia la aplicación desde la raíz con `npm run dev`. Abre la dirección **Local** que indique Vite en la terminal. La API debe iniciar sin errores de conexión a MySQL. Prueba iniciar sesión con un usuario existente si restauraste la base. Si creaste una base vacía, crea el administrador inicial una sola vez:
 
 ```powershell
 npm --prefix backend run create-admin
@@ -276,7 +259,7 @@ Comprueba también que puedes iniciar sesión y que las páginas cargan. Para ll
 - Los listados CRUD admiten `?page=1&limit=10&search=texto` (límite: 10, 25 o 50); `search` aplica coincidencias parciales en los campos admitidos. Las respuestas paginadas incluyen `data`, `total`, `page`, `limit` y `totalPages`. Sin parámetros de paginación o búsqueda conservan la respuesta completa existente para mantener compatibilidad con otros consumidores de la API.
 - `/api/reports/summary`, `/api/reports/calls-by-day` y `/api/reports/by-agent` — métricas de llamadas; `ADMIN` ve datos globales y `USER` solo los propios. `GET /api/reports` conserva su respuesta de grabaciones.
 - `/api/supervision/summary`, `/api/supervision/agents` y `/api/supervision/queue` — supervisión exclusiva para `ADMIN`; la cola permite iniciar monitoreo, escalar y retirar entradas.
-- `/api/softphone` — token temporal de Twilio Voice, presencia, heartbeat, webhooks y llamadas.
+- `/api/softphone` — configuración del proveedor, presencia, heartbeat, webhooks y llamadas del softphone.
 
 La API valida los JWT y consulta el estado y rol actuales del usuario en la base. Las operaciones sensibles y los permisos se verifican en el servidor, no solamente en la interfaz.
 
@@ -284,7 +267,7 @@ La API valida los JWT y consulta el estado y rol actuales del usuario en la base
 
 El softphone envía un heartbeat cada 30 segundos. Si no se recibe uno durante más de 90 segundos, Supervisión calcula el estado efectivo como `offline`; un heartbeat vencido no puede reactivar una presencia desconectada. El cierre de sesión normal también marca la presencia `offline`.
 
-El webhook reserva al agente y registra el `CallSid` en la misma transacción; una repetición del mismo webhook no crea otra asignación ni otro intento de llamada.
+La reserva registra la llamada y marca al agente ocupado en una misma transacción. Los webhooks firmados de Telnyx actualizan su estado y las repeticiones no crean nuevas reservas.
 
 Las llamadas `active` asignadas a un agente `USER` activo se incorporan a la cola como `waiting`. Al completar, fallar o retirar la asignación del agente, la entrada se elimina. Un administrador puede pasar una entrada de `waiting` a `monitoring`, escalarla desde `waiting` o `monitoring`, y retirarla de la cola. Esta cola organiza la supervisión y no proporciona escucha ni grabación de audio.
 
@@ -296,7 +279,7 @@ Las llamadas `active` asignadas a un agente `USER` activo se incorporan a la col
 
 ### Carga de datos para demostración
 
-La carga de demostración agrega usuarios USER, contactos, llamadas, metadatos de grabaciones, presencia inicial y entradas de supervisión. No crea ni modifica administradores, roles, contraseñas existentes, archivos de audio ni enlaces de grabación; tampoco realiza llamadas por Twilio.
+La carga de demostración agrega usuarios USER, contactos, llamadas, metadatos de grabaciones, presencia inicial y entradas de supervisión. No crea ni modifica administradores, roles, contraseñas existentes, archivos de audio ni enlaces de grabación; tampoco realiza llamadas reales.
 
 Primero revisa el plan sin escribir en la base:
 
@@ -314,6 +297,6 @@ Remove-Item Env:\DEMO_AGENT_PASSWORD
 
 Las cuentas nuevas usan correos `@example.test`; las seis activas comparten la contraseña temporal indicada, mientras que las cuentas adicionales quedan inactiva y bloqueada para mostrar esos estados. No uses esta contraseña en producción. La contraseña no se guarda en el script ni se imprime.
 
-La carga es transaccional e idempotente para los registros que conserva el marcador: los usuarios y contactos se reconocen por correo, las llamadas por un identificador reservado `DEMO-CM-A1-...` en `provider_call_sid`, las grabaciones por la llamada asociada y la cola por la llamada. Los identificadores de llamada son marcadores internos, no `CallSid` reales de Twilio. Una repetición omite los registros ya presentes y no los sobrescribe. Si se editan los identificadores de una fila demo, el script puede detenerse para evitar duplicados o relaciones incoherentes.
+La carga es transaccional e idempotente para los registros que conserva el marcador: los usuarios y contactos se reconocen por correo, las llamadas por un identificador reservado `DEMO-CM-A1-...` en `provider_call_sid`, las grabaciones por la llamada asociada y la cola por la llamada. Los identificadores de llamada son marcadores internos, no identificadores reales del proveedor. Una repetición omite los registros ya presentes y no los sobrescribe. Si se editan los identificadores de una fila demo, el script puede detenerse para evitar duplicados o relaciones incoherentes.
 
 Los teléfonos y datos de contacto usan valores ficticios. Las grabaciones son exclusivamente metadatos con URL y transcripción nulas y duración cero; no se crean archivos. La presencia inicial se carga como `offline`, ya que `available` y `busy` requieren un dispositivo registrado y heartbeats vigentes. Para demostrar presencia en línea, registra un agente desde **Softphone**; la cola solo simula estados de supervisión y no transmite ni graba audio.

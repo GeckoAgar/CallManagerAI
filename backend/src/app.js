@@ -14,6 +14,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const roleRoutes = require('./routes/roleRoutes');
 const supervisionRoutes = require('./routes/supervisionRoutes');
 const softphoneRoutes = require('./routes/softphoneRoutes');
+const telnyxSoftphoneRoutes = require('./routes/telnyxSoftphoneRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const { notificationEvents } = require('./middlewares/notificationEvents');
 
@@ -22,6 +23,7 @@ const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 app.use(helmet());
 app.use(morgan('dev'));
+app.use('/api/softphone/telnyx/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
@@ -40,6 +42,7 @@ app.use('/api/recordings', recordingRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/supervision', supervisionRoutes);
+app.use('/api/softphone/telnyx', telnyxSoftphoneRoutes);
 app.use('/api/softphone', softphoneRoutes);
 app.use('/api/notifications', notificationRoutes);
 
