@@ -12,6 +12,7 @@ const { parsePagination } = require('../src/utils/pagination');
 test('los esquemas de recursos validan creación, actualización y límites', () => {
   const cases = [
     [contactCreateSchema, { name: ' Ana ', company: null, owner_id: '2' }, null],
+    [contactCreateSchema, { name: 'Ana', status: 'inactive' }, 'Campos de contacto inválidos.'],
     [contactCreateSchema, { name: '  ' }, 'El nombre del contacto es obligatorio.'],
     [contactUpdateSchema, { email: 'incorrecto' }, 'Correo inválido.'],
     [contactUpdateSchema, { status: 'deleted' }, 'Estado inválido.'],

@@ -41,14 +41,14 @@ async function get(req, res, next) {
 async function create(req, res, next) {
   const error = validationError(contactCreateSchema, req.body);
   if (error) return res.status(400).json({ message: error });
-  const { name, company = null, phone = null, email = null, status = 'active' } = req.body;
+  const { name, company = null, phone = null, email = null } = req.body;
   const ownerId = req.user.roleName === 'ADMIN'
     ? (req.body.owner_id ? Number(req.body.owner_id) : null)
     : req.user.id;
   try {
     const id = await contactModel.create({
       owner_id: ownerId, name: name.trim(), company: company || null, phone: phone || null,
-      email: email ? email.trim().toLowerCase() : null, status,
+      email: email ? email.trim().toLowerCase() : null, status: 'active',
     });
     return res.status(201).json({ contact: await contactModel.findById(id) });
   } catch (error) {

@@ -19,7 +19,7 @@ const fields = [
   { name: 'phone', label: 'Teléfono', maxLength: 30, optional: true },
   { name: 'email', label: 'Correo', type: 'email', maxLength: 150, optional: true },
   { name: 'owner_id', label: 'Propietario', type: 'select', optional: true, adminOnly: true, optionsEndpoint: '/users', optionsCollection: 'users', labelKey: 'name' },
-  { name: 'status', label: 'Estado', type: 'select', required: true, defaultValue: 'active', options: [
+  { name: 'status', label: 'Estado', type: 'select', required: true, editOnly: true, options: [
     { id: 'active', name: 'Activo' },
     { id: 'inactive', name: 'Inactivo' },
   ] },

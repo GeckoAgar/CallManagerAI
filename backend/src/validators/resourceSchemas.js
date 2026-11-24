@@ -14,7 +14,7 @@ function contactSchema(partial) {
     company: optionalField(optionalText(120), 'Empresa inválida.'),
     phone: optionalField(optionalText(30), 'Teléfono inválido.'),
     email: optionalField(email.or(z.literal('')), 'Correo inválido.'),
-    status: optionalField(z.enum(allowedStatuses.contact), 'Estado inválido.'),
+    ...(partial ? { status: optionalField(z.enum(allowedStatuses.contact), 'Estado inválido.') } : {}),
     owner_id: optionalField(nullableId, 'Propietario inválido.'),
   }).strict('Campos de contacto inválidos.').describe('Campos de contacto inválidos.');
 }

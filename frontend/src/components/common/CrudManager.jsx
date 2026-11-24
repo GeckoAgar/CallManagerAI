@@ -192,7 +192,8 @@ export function CrudManager({ title, resource, columns, fields, description, sea
     };
   }, [fields, isAdmin]);
 
-  const visibleFields = fields.filter((field) => !field.adminOnly || isAdmin);
+  const availableFields = fields.filter((field) => !field.adminOnly || isAdmin);
+  const visibleFields = availableFields.filter((field) => !field.editOnly || editing);
   const resourceLabel = title.replace(/^Gestión de /i, '').toLowerCase();
   const messages = resourceMessages[resource] || { name: 'Registro', created: 'creado', updated: 'actualizado', deleted: 'eliminado' };
 
@@ -206,14 +207,16 @@ export function CrudManager({ title, resource, columns, fields, description, sea
   function openCreate() {
     setEditing(null);
     setDialogError('');
-    setValues(Object.fromEntries(visibleFields.map((field) => [field.name, field.defaultValue ?? ''])));
+    setValues(Object.fromEntries(availableFields
+      .filter((field) => !field.editOnly)
+      .map((field) => [field.name, field.defaultValue ?? ''])));
     setDialogOpen(true);
   }
 
   function openEdit(row) {
     setEditing(row);
     setDialogError('');
-    setValues(Object.fromEntries(visibleFields.map((field) => [
+    setValues(Object.fromEntries(availableFields.map((field) => [
       field.name,
       field.type === 'password' ? '' : (row[field.name] ?? ''),
     ])));
