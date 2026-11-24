@@ -1,65 +1,13 @@
-﻿const express = require('express');
-const router = express.Router();
-const { registerValidation, loginValidation, validateRequest } = require('../validators/authValidators');
-const { registerUser, loginUser, generateToken } = require('../utils/authService');
+const express = require('express');
+const { registerValidation, loginValidation } = require('../validators/authValidators');
 const { authenticate } = require('../middlewares/auth');
-const { pool } = require('../config/db');
-const { runInTransaction } = require('../utils/surveillanceQueue');
+const authController = require('../controllers/authController');
 
-router.post('/register', registerValidation, validateRequest, async (req, res) => {
-  try {
-    const user = await registerUser(req.body);
-    const token = generateToken(user);
-    return res.status(201).json({ message: 'Usuario registrado con éxito', token, user });
-  } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY' || error.message === 'El correo ya está registrado.') {
-      return res.status(409).json({ message: 'El correo ya está registrado.' });
-    }
+const router = express.Router();
 
-    console.error('Registration failed:', error);
-    return res.status(500).json({ message: 'No se pudo completar el registro.' });
-  }
-});
-
-router.post('/login', loginValidation, validateRequest, async (req, res) => {
-  try {
-    const result = await loginUser(req.body);
-    return res.json({ message: 'Inicio de sesión exitoso', ...result });
-  } catch (error) {
-    if (error.message === 'Credenciales incorrectas.') {
-      return res.status(401).json({ message: error.message });
-    }
-    if (error.message === 'La cuenta no está activa.') {
-      return res.status(403).json({ message: error.message });
-    }
-
-    console.error('Login failed:', error);
-    return res.status(500).json({ message: 'No se pudo completar el inicio de sesión.' });
-  }
-});
-
-router.get('/me', authenticate, async (req, res) => {
-  return res.json({ user: req.user });
-});
-
-router.post('/logout', authenticate, async (req, res, next) => {
-  try {
-    await runInTransaction(async (connection) => {
-      await connection.query(
-        'UPDATE users SET token_version = token_version + 1 WHERE id = ?',
-        [req.user.id]
-      );
-      await connection.query(
-        `UPDATE agent_presence
-         SET status = 'offline', device_session_id = NULL
-         WHERE user_id = ?`,
-        [req.user.id]
-      );
-    });
-    return res.json({ message: 'Sesión cerrada correctamente.' });
-  } catch (error) {
-    return next(error);
-  }
-});
+router.post('/register', registerValidation, authController.register);
+router.post('/login', loginValidation, authController.login);
+router.get('/me', authenticate, authController.me);
+router.post('/logout', authenticate, authController.logout);
 
 module.exports = router;

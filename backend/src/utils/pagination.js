@@ -1,4 +1,9 @@
+const { z } = require('zod');
+
 const pageSizes = new Set([10, 25, 50]);
+const pageSchema = z.string().regex(/^[1-9]\d*$/);
+const limitSchema = z.string().regex(/^\d+$/).refine((value) => pageSizes.has(Number(value)));
+const searchSchema = z.string().max(255);
 
 function parsePagination(query) {
   const hasPage = Object.hasOwn(query, 'page');
@@ -9,13 +14,13 @@ function parsePagination(query) {
   const rawPage = hasPage ? query.page : '1';
   const rawLimit = hasLimit ? query.limit : '10';
   const rawSearch = hasSearch ? query.search : '';
-  if (typeof rawPage !== 'string' || !/^[1-9]\d*$/.test(rawPage)) {
+  if (!pageSchema.safeParse(rawPage).success) {
     return { error: 'El parámetro page debe ser un entero positivo.' };
   }
-  if (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit) || !pageSizes.has(Number(rawLimit))) {
+  if (!limitSchema.safeParse(rawLimit).success) {
     return { error: 'El parámetro limit debe ser 10, 25 o 50.' };
   }
-  if (typeof rawSearch !== 'string' || rawSearch.length > 255) {
+  if (!searchSchema.safeParse(rawSearch).success) {
     return { error: 'El parámetro search debe ser texto de hasta 255 caracteres.' };
   }
 

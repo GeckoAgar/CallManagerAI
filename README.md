@@ -23,6 +23,16 @@ Aplicación web para la gestión de comunicaciones y llamadas. El proyecto utili
 
 Las llamadas reales requieren una cuenta de Telnyx y una URL HTTPS pública para recibir webhooks. Las llamadas entrantes no están implementadas.
 
+### Validaciones del backend
+
+La API utiliza esquemas de Zod para validar las entradas de autenticación, los recursos, la paginación y los parámetros del dashboard y el softphone. En autenticación, Zod usa `validator` para conservar la validación previa de correos, incluidos correos internacionales. Las reglas de permisos, acceso a registros y transiciones de estado se comprueban por separado. Los errores de validación responden con HTTP 400 y un mensaje en español; autenticación incluye además el detalle de los campos.
+
+Las pruebas de los esquemas se ejecutan desde la raíz con `node --test backend\test\validation.test.js`. Las pruebas de integración requieren MySQL y permisos para crear y eliminar bases temporales.
+
+### Organización del backend
+
+Las rutas de la API declaran los endpoints y middlewares; los controladores manejan las solicitudes, las respuestas y las reglas de negocio, y los modelos concentran las consultas parametrizadas a MySQL. Las operaciones que requieren transacciones conservan la misma conexión durante todo el proceso. Los scripts administrativos y de datos de ejemplo se ejecutan por separado.
+
 ### Filtro de período en el Dashboard
 
 El filtro aplica a las cuatro tarjetas y a ambos gráficos. Por defecto muestra los últimos siete días incluyendo hoy; también permite elegir un día, una semana de lunes a domingo indicando una fecha, o un mes calendario. Los gráficos agrupan el día por hora y los demás períodos por día. La fecha usada es la de creación de la llamada, en la zona horaria de MySQL. ADMIN ve todas las llamadas elegibles y USER solo las asignadas a su cuenta; se incluyen las llamadas de demostración.

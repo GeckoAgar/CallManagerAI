@@ -1,4 +1,4 @@
-const { pool } = require('../config/db');
+const notificationModel = require('../models/notificationModel');
 
 const events = [
   { method: 'POST', path: /^\/api\/users$/, type: 'info', message: 'Se creó un usuario.' },
@@ -20,10 +20,8 @@ function notificationEvents(req, res, next) {
   if (event) {
     res.on('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300 || !req.user) return;
-      pool.query(
-        'INSERT INTO notifications (user_id, type, message) VALUES (?, ?, ?)',
-        [req.user.id, event.type, event.message]
-      ).catch((error) => console.error('Failed to record notification:', error));
+      notificationModel.create(req.user.id, event.type, event.message)
+        .catch((error) => console.error('Failed to record notification:', error));
     });
   }
   next();

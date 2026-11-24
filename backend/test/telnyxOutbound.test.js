@@ -116,6 +116,23 @@ test('Telnyx outbound calls require a reservation and verified, idempotent webho
     const presenceResponse = await fetch('http://127.0.0.1:' + server.address().port + '/api/softphone/presence', { headers });
     assert.equal(presenceResponse.status, 200);
     assert.equal((await presenceResponse.json()).presence.status, 'available');
+    const otherDevice = '8a9bcb72-a7c7-470f-8cfc-a19989a27ade';
+    const conflict = await fetch(`${presenceBase}/register`, {
+      method: 'PATCH', headers, body: JSON.stringify({ deviceSessionId: otherDevice }),
+    });
+    assert.equal(conflict.status, 409);
+    const replaced = await fetch(`${presenceBase}/heartbeat`, {
+      method: 'PATCH', headers, body: JSON.stringify({ deviceSessionId: otherDevice }),
+    });
+    assert.equal((await replaced.json()).reason, 'session_replaced');
+    const busy = await fetch(presenceBase, {
+      method: 'PATCH', headers, body: JSON.stringify({ status: 'busy', deviceSessionId: reservationBody.deviceSessionId }),
+    });
+    assert.equal(busy.status, 200);
+    const available = await fetch(presenceBase, {
+      method: 'PATCH', headers, body: JSON.stringify({ status: 'available', deviceSessionId: reservationBody.deviceSessionId }),
+    });
+    assert.equal(available.status, 200);
     const legacyToken = await fetch('http://127.0.0.1:' + server.address().port + '/api/softphone/token', { headers });
     assert.equal(legacyToken.status, 404);
     const legacyWebhook = await fetch('http://127.0.0.1:' + server.address().port + '/api/softphone/webhooks/voice', {

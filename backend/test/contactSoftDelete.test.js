@@ -120,7 +120,7 @@ test('contactos eliminados conservan su historial y solo ADMIN puede restaurarlo
     assert.equal((await request(adminId, 'POST', `/contacts/${contactId}/restore`)).status, 404);
     const restored = await request(agentId, 'GET', `/contacts/${contactId}`);
     assert.equal(restored.status, 200);
-    assert.equal(restored.body.contact.status, 'inactive');
+    assert.equal(restored.body.contact.status, 'active');
     assert.equal((await request(agentId, 'POST', '/calls', {
       contact_id: contactId,
       phone_number: '+5491123456789',

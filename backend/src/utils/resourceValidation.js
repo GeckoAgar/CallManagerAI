@@ -1,4 +1,5 @@
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { z } = require('zod');
+
 const allowedStatuses = {
   user: ['active', 'inactive', 'blocked'],
   contact: ['active', 'inactive'],
@@ -6,41 +7,31 @@ const allowedStatuses = {
   direction: ['inbound', 'outbound'],
 };
 
+const numericInput = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const positiveId = numericInput.refine((value) => Number.isInteger(Number(value)) && Number(value) > 0);
+const nonNegativeNumber = (max) => numericInput.refine(
+  (value) => Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= max
+);
+const score = numericInput.refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100);
+const text = (max) => z.string().refine((value) => value.trim().length > 0 && value.trim().length <= max);
+const optionalText = (max) => z.string().max(max).nullable();
+const email = z.string().refine((value) => value.length <= 150 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()));
+const deviceSessionId = z.string().regex(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i);
+const phoneNumber = z.string().regex(/^\+[1-9]\d{7,14}$/);
+
 function isPositiveId(value) {
-  return Number.isInteger(Number(value)) && Number(value) > 0;
-}
-
-function hasText(value, maxLength) {
-  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= maxLength;
-}
-
-function optionalText(value, maxLength) {
-  return value == null || value === '' || (typeof value === 'string' && value.length <= maxLength);
-}
-
-function validEmail(value) {
-  return typeof value === 'string' && value.length <= 150 && emailPattern.test(value.trim());
-}
-
-function validEnum(value, values) {
-  return values.includes(value);
-}
-
-function validNonNegativeNumber(value, max) {
-  return Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= max;
-}
-
-function validScore(value) {
-  return Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
+  return positiveId.safeParse(value).success;
 }
 
 module.exports = {
   allowedStatuses,
-  hasText,
+  deviceSessionId,
+  email,
   isPositiveId,
+  nonNegativeNumber,
   optionalText,
-  validEmail,
-  validEnum,
-  validNonNegativeNumber,
-  validScore,
+  phoneNumber,
+  positiveId,
+  score,
+  text,
 };

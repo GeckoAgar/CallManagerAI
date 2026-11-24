@@ -1,5 +1,5 @@
 ﻿const jwt = require('jsonwebtoken');
-const { pool } = require('../config/db');
+const authModel = require('../models/authModel');
 const { getJwtSecret } = require('../config/env');
 
 async function authenticate(req, res, next) {
@@ -21,32 +21,26 @@ async function authenticate(req, res, next) {
   }
 
   try {
-    const [rows] = await pool.query(
-      `SELECT u.id, u.name, u.email, u.status, u.role_id, u.token_version, r.name AS role_name
-       FROM users u
-       LEFT JOIN roles r ON r.id = u.role_id
-       WHERE u.id = ?`,
-      [decoded.id]
-    );
+    const user = await authModel.findUserById(decoded.id);
 
-    if (!rows.length) {
+    if (!user) {
       return res.status(401).json({ message: 'Usuario no encontrado.' });
     }
 
-    if (rows[0].status !== 'active') {
+    if (user.status !== 'active') {
       return res.status(403).json({ message: 'La cuenta no está activa.' });
     }
-    if ((decoded.tokenVersion ?? 0) !== rows[0].token_version) {
+    if ((decoded.tokenVersion ?? 0) !== user.token_version) {
       return res.status(401).json({ message: 'La sesión ya no es válida. Inicia sesión nuevamente.' });
     }
 
     req.user = {
-      id: rows[0].id,
-      name: rows[0].name,
-      email: rows[0].email,
-      roleId: rows[0].role_id,
-      roleName: rows[0].role_name,
-      status: rows[0].status,
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roleId: user.role_id,
+      roleName: user.role_name,
+      status: user.status,
     };
 
     next();

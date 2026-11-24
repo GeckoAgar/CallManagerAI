@@ -84,6 +84,98 @@ test('búsqueda y notificaciones respetan permisos y registran eventos reales', 
       assert.fail(`No se registraron ${count} notificaciones para el usuario.`);
     }
 
+    for (const [method, url, body, message] of [
+      ['POST', '/contacts', { name: '' }, 'El nombre del contacto es obligatorio.'],
+      ['PATCH', `/contacts/${contactId}`, { status: 'deleted' }, 'Estado inválido.'],
+      ['POST', '/calls', { phone_number: '123', score: 101 }, 'La calificación debe estar entre 0 y 100.'],
+      ['POST', '/recordings', { call_id: calls.insertId, file_name: 'audio', url: 'ftp://example.test' }, 'La URL debe usar HTTP o HTTPS.'],
+      ['PATCH', `/users/${agentId}`, { role_id: 0 }, 'Rol inválido.'],
+      ['POST', '/roles', { name: '1invalid' }, 'Nombre de rol (2-50 caracteres, letras, números y _) y descripción válidos son obligatorios.'],
+      ['PATCH', '/softphone/presence/register', { deviceSessionId: 'invalid' }, 'Identificador de sesión del dispositivo inválido.'],
+    ]) {
+      const invalid = await request(adminId, method, url, body);
+      assert.equal(invalid.status, 400, url);
+      assert.equal(invalid.body.message, message, url);
+    }
+    const invalidLogin = await request(adminId, 'POST', '/auth/login', { email: 'malo', password: '' });
+    assert.equal(invalidLogin.status, 400);
+    assert.deepEqual(invalidLogin.body.errors.map((error) => error.path), ['email', 'password']);
+    const registered = await request(adminId, 'POST', '/auth/register', {
+      name: ' Nueva cuenta ', email: ' nueva@example.test ', password: 'testing123',
+    });
+    assert.equal(registered.status, 201);
+    assert.equal(registered.body.user.name, 'Nueva cuenta');
+    assert.equal((await request(adminId, 'POST', '/auth/login', {
+      email: ' nueva@example.test ', password: 'testing123',
+    })).status, 200);
+    assert.equal((await request(adminId, 'PATCH', `/roles/${roleIds.ADMIN}`, { name: 'CAMBIADO' })).status, 409);
+    assert.equal((await request(adminId, 'DELETE', `/roles/${roleIds.ADMIN}`)).status, 409);
+    assert.equal((await request(agentId, 'GET', `/users/${adminId}`)).status, 403);
+    assert.equal((await request(adminId, 'PATCH', `/users/${adminId}`, { status: 'inactive' })).status, 400);
+    const newContact = await request(agentId, 'POST', '/contacts', {
+      name: ' Contacto temporal ', email: 'TEST@EXAMPLE.TEST',
+    });
+    assert.equal(newContact.status, 201);
+    assert.equal(newContact.body.contact.owner_id, agentId);
+    assert.equal(newContact.body.contact.name, 'Contacto temporal');
+    assert.equal(newContact.body.contact.email, 'test@example.test');
+    assert.equal((await request(otherId, 'PATCH', `/contacts/${newContact.body.contact.id}`, { name: 'Otro' })).status, 404);
+    const updatedContact = await request(agentId, 'PATCH', `/contacts/${newContact.body.contact.id}`, { company: 'Empresa' });
+    assert.equal(updatedContact.status, 200);
+    assert.equal(updatedContact.body.contact.company, 'Empresa');
+    await connection.query('DELETE FROM contacts WHERE id = ?', [newContact.body.contact.id]);
+
+    const newRecording = await request(agentId, 'POST', '/recordings', {
+      call_id: calls.insertId, file_name: ' audio temporal ', duration_seconds: '12',
+    });
+    assert.equal(newRecording.status, 201);
+    assert.equal(newRecording.body.recording.file_name, 'audio temporal');
+    assert.equal(newRecording.body.recording.duration_seconds, 12);
+    assert.equal((await request(otherId, 'GET', `/recordings/${newRecording.body.recording.id}`)).status, 404);
+    assert.equal((await request(otherId, 'PATCH', `/recordings/${newRecording.body.recording.id}`, { file_name: 'Otro' })).status, 404);
+    assert.equal((await request(agentId, 'PATCH', `/recordings/${newRecording.body.recording.id}`, { call_id: calls.insertId + 1 })).status, 400);
+    const updatedRecording = await request(agentId, 'PATCH', `/recordings/${newRecording.body.recording.id}`, { transcription: 'Prueba' });
+    assert.equal(updatedRecording.status, 200);
+    assert.equal(updatedRecording.body.recording.transcription, 'Prueba');
+    await connection.query('DELETE FROM recordings WHERE id = ?', [newRecording.body.recording.id]);
+
+    const newCall = await request(agentId, 'POST', '/calls', {
+      contact_id: contactId, phone_number: ' 555123 ', status: 'active',
+    });
+    assert.equal(newCall.status, 201);
+    assert.equal(newCall.body.call.phone_number, '555123');
+    assert.equal(newCall.body.call.agent_id, agentId);
+    assert.equal((await request(otherId, 'GET', `/calls/${newCall.body.call.id}`)).status, 404);
+    assert.equal((await request(agentId, 'PATCH', `/calls/${newCall.body.call.id}`, { agent_id: otherId })).status, 403);
+    const [activeQueue] = await connection.query('SELECT id, status FROM surveillance_queue WHERE call_id = ?', [newCall.body.call.id]);
+    assert.equal(activeQueue.length, 1);
+    assert.equal(activeQueue[0].status, 'waiting');
+    assert.equal((await request(agentId, 'GET', '/supervision/summary')).status, 403);
+    assert.equal((await request(adminId, 'GET', '/supervision/summary')).body.summary.activeCalls, 1);
+    assert.ok((await request(adminId, 'GET', '/supervision/agents')).body.agents.some((agent) => agent.id === agentId));
+    assert.ok((await request(adminId, 'GET', '/supervision/queue')).body.queue.some((item) => item.id === activeQueue[0].id));
+    assert.equal((await request(adminId, 'POST', `/supervision/queue/${activeQueue[0].id}/monitoring`)).status, 200);
+    assert.equal((await request(adminId, 'POST', `/supervision/queue/${activeQueue[0].id}/escalate`)).status, 200);
+    assert.equal((await request(adminId, 'POST', `/supervision/queue/${activeQueue[0].id}/monitoring`)).status, 409);
+    assert.equal((await request(agentId, 'PATCH', `/calls/${newCall.body.call.id}`, { status: 'completed' })).status, 200);
+    const [closedQueue] = await connection.query('SELECT id FROM surveillance_queue WHERE call_id = ?', [newCall.body.call.id]);
+    assert.equal(closedQueue.length, 0);
+    await connection.query('DELETE FROM calls WHERE id = ?', [newCall.body.call.id]);
+
+    assert.equal((await request(adminId, 'GET', '/reports/summary')).body.summary.totalCalls, 2);
+    assert.equal((await request(agentId, 'GET', '/reports/summary')).body.summary.totalCalls, 1);
+    assert.equal((await fetch(`${base}/reports/inexistente`)).status, 404);
+    const callsByDay = (await request(agentId, 'GET', '/reports/calls-by-day')).body.callsByDay;
+    assert.equal(callsByDay.length, 7);
+    assert.equal(callsByDay.reduce((total, day) => total + day.totalCalls, 0), 1);
+    const agents = (await request(agentId, 'GET', '/reports/by-agent')).body.agents;
+    assert.equal(agents.length, 1);
+    assert.equal(agents[0].agentId, agentId);
+    assert.equal(agents[0].totalCalls, 1);
+    const reportRecordings = (await request(agentId, 'GET', '/reports')).body.recordings;
+    assert.equal(reportRecordings.length, 1);
+    assert.equal(reportRecordings[0].id, recordings.insertId);
+
     for (const [resource, term] of [
       ['/contacts', 'prueba'], ['/users', 'Agente prueba'], ['/roles', 'ADMIN'],
       ['/calls', '123456'], ['/recordings', 'audio-prueba'],
@@ -136,6 +228,11 @@ test('búsqueda y notificaciones respetan permisos y registran eventos reales', 
     for (const message of ['Se actualizó un rol.', 'Se eliminó un rol.', 'Se creó un usuario.', 'Se actualizó un usuario.', 'Se eliminó un usuario.']) {
       assert.ok(adminEvents.notifications.some((item) => item.message === message), message);
     }
+    assert.equal((await request(adminId, 'PATCH', `/users/${registered.body.user.id}`, { password: 'newpassword123' })).status, 200);
+    assert.equal((await request(registered.body.user.id, 'GET', `/users/${registered.body.user.id}`)).status, 401);
+    assert.equal((await request(adminId, 'POST', '/auth/login', {
+      email: 'nueva@example.test', password: 'newpassword123',
+    })).status, 200);
     assert.equal((await request(agentId, 'DELETE', `/recordings/${recordings.insertId}`)).status, 200);
     assert.equal((await request(agentId, 'DELETE', `/calls/${calls.insertId}`)).status, 200);
     const agentEvents = await waitForCount(agentId, 2);
